@@ -1,4 +1,5 @@
 export const HOME_LOCATOR_STORAGE_KEY = "qso-home-locator";
+export const DEFAULT_HOME_LOCATOR = "JN99AK";
 const HOME_LOCATOR_CHANGED_EVENT = "station-settings:changed";
 
 export function normalizeLocator(value: string) {
@@ -12,10 +13,10 @@ export function isValidLocator(value: string) {
 
 export function readHomeLocator() {
   if (typeof window === "undefined") {
-    return "";
+    return DEFAULT_HOME_LOCATOR;
   }
 
-  return normalizeLocator(window.localStorage.getItem(HOME_LOCATOR_STORAGE_KEY) ?? "");
+  return normalizeLocator(window.localStorage.getItem(HOME_LOCATOR_STORAGE_KEY) ?? DEFAULT_HOME_LOCATOR);
 }
 
 export function saveHomeLocator(value: string) {
@@ -52,5 +53,5 @@ export function subscribeHomeLocator(callback: () => void) {
 }
 
 export function getHomeLocatorServerSnapshot() {
-  return "";
+  return DEFAULT_HOME_LOCATOR;
 }
