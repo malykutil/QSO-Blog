@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f7fb;
+  --foreground: #102033;
+  --muted: #607089;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --border: rgba(16, 32, 51, 0.1);
+}
+
+html[data-theme="dark"] {
+  --background: #07111b;
+  --foreground: #e9f0f8;
+  --muted: #97a8bc;
+  --surface: rgba(10, 20, 33, 0.78);
+  --surface-strong: rgba(12, 22, 36, 0.92);
+  --border: rgba(233, 240, 248, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(64, 145, 223, 0.2), transparent 28%),
+    radial-gradient(circle at 82% 18%, rgba(255, 148, 77, 0.16), transparent 24%),
+    linear-gradient(180deg, #eef3f8 0%, #f6f9fc 48%, #eef3f7 100%);
+  color: var(--foreground);
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+}
+
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at top left, rgba(57, 140, 224, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 18%, rgba(255, 148, 77, 0.12), transparent 22%),
+    linear-gradient(180deg, #07111b 0%, #0a1522 48%, #08111a 100%);
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(64, 145, 223, 0.18);
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+
+.glass-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 80px rgba(48, 79, 112, 0.08);
+}
+
+.theme-toggle-switch {
+  border-color: rgba(16, 32, 51, 0.1);
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.theme-toggle-switch__thumb {
+  background: #ffffff;
+  transform: translateX(0);
+}
+
+html[data-theme="dark"] .theme-toggle-switch {
+  border-color: rgba(96, 165, 250, 0.24);
+  background: rgba(59, 130, 246, 0.18);
+}
+
+html[data-theme="dark"] .theme-toggle-switch__thumb {
+  background: #0f172a;
+  transform: translateX(1.95rem);
+}
+
+html[data-theme="dark"] .glass-panel {
+  box-shadow: 0 24px 80px rgba(2, 8, 17, 0.34);
+}
+
+html[data-theme="dark"] aside {
+  background: linear-gradient(180deg, rgba(10, 20, 33, 0.94), rgba(7, 16, 26, 0.92)) !important;
+  border-color: rgba(233, 240, 248, 0.12) !important;
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-white\/5,
+html[data-theme="dark"] .bg-white\/80,
+html[data-theme="dark"] .bg-white\/85,
+html[data-theme="dark"] .bg-white\/90,
+html[data-theme="dark"] .bg-white\/95 {
+  background-color: rgba(11, 22, 36, 0.92) !important;
+}
+
+html[data-theme="dark"] .bg-slate-100,
+html[data-theme="dark"] .bg-slate-100\/80 {
+  background-color: rgba(14, 26, 40, 0.88) !important;
+}
+
+html[data-theme="dark"] .border-slate-900\/8,
+html[data-theme="dark"] .border-slate-900\/10,
+html[data-theme="dark"] .border-slate-900\/12 {
+  border-color: rgba(233, 240, 248, 0.12) !important;
+}
+
+html[data-theme="dark"] .text-slate-950 {
+  color: #f4f8fc !important;
+}
+
+html[data-theme="dark"] .text-slate-900 {
+  color: #edf3fb !important;
+}
+
+html[data-theme="dark"] .text-slate-700 {
+  color: #c6d1df !important;
+}
+
+html[data-theme="dark"] .text-slate-600,
+html[data-theme="dark"] .text-slate-500 {
+  color: #96a8bd !important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background-color: rgba(11, 22, 36, 0.94) !important;
+  border-color: rgba(233, 240, 248, 0.12) !important;
+  color: #eef4fb !important;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #7f93aa;
+}

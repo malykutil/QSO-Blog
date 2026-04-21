@@ -1,0 +1,24 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#08111C"/>
+  <rect width="1200" height="630" fill="url(#paint0_radial)" fill-opacity="0.75"/>
+  <rect x="54" y="54" width="1092" height="522" rx="36" fill="url(#paint1_linear)" stroke="rgba(255,255,255,0.12)"/>
+  <text x="108" y="174" fill="#8CD5FF" font-family="Arial, sans-serif" font-size="28" letter-spacing="10">RADIOAMATÉRSKÁ STANICE</text>
+  <text x="108" y="320" fill="#F9FBFD" font-family="Georgia, serif" font-size="118" font-weight="700">OK2MKJ</text>
+  <text x="108" y="396" fill="#DDE8F3" font-family="Arial, sans-serif" font-size="34">Blog, mapa spojení a živý deník provozu</text>
+  <text x="108" y="474" fill="#F8B65F" font-family="Arial, sans-serif" font-size="26">QSO • MAPA • PROVOZ • ANTÉNY</text>
+  <circle cx="930" cy="250" r="118" fill="#0C1B2C" stroke="#8CD5FF" stroke-opacity="0.45" stroke-width="3"/>
+  <circle cx="930" cy="250" r="40" fill="#F9FBFD"/>
+  <path d="M818 250C844 201 879 176 930 176C981 176 1016 201 1042 250" stroke="#F8B65F" stroke-width="12" stroke-linecap="round"/>
+  <path d="M846 282C866 247 891 229 930 229C969 229 994 247 1014 282" stroke="#8CD5FF" stroke-width="10" stroke-linecap="round"/>
+  <path d="M782 508H1078" stroke="#F9FBFD" stroke-opacity="0.72" stroke-width="8" stroke-linecap="round"/>
+  <defs>
+    <radialGradient id="paint0_radial" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 82) rotate(137.437) scale(671.038 707.696)">
+      <stop stop-color="#1F5F8F"/>
+      <stop offset="1" stop-color="#08111C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paint1_linear" x1="54" y1="54" x2="1146" y2="576" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0C1726"/>
+      <stop offset="1" stop-color="#163F63"/>
+    </linearGradient>
+  </defs>
+</svg>
