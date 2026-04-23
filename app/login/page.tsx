@@ -4,7 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/app/components/app-shell";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supabase";
+import { isSupabaseConfigured } from "@/src/lib/supabase";
+
+function sanitizeNextPath(nextPath: string | null) {
+  if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return nextPath;
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,9 +24,7 @@ export default function LoginPage() {
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    const supabase = getSupabaseBrowserClient();
-
-    if (!supabase) {
+    if (!isSupabaseConfigured()) {
       setErrorMessage("Přihlášení je momentálně nedostupné.");
       return;
     }
@@ -26,18 +32,32 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password,
+      }),
     });
 
-    if (error) {
-      setErrorMessage(`Přihlášení se nezdařilo: ${error.message}`);
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const retryAfter = response.headers.get("Retry-After");
+      const waitSuffix = retryAfter ? ` Zkus to znovu za ${retryAfter} s.` : "";
+
+      setErrorMessage(payload?.error ? `${payload.error}${waitSuffix}` : `Přihlášení se nezdařilo.${waitSuffix}`);
       setLoading(false);
       return;
     }
 
-    router.push("/dashboard");
+    const nextPath = sanitizeNextPath(
+      typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next"),
+    );
+    router.push(nextPath);
     router.refresh();
   };
 
@@ -87,6 +107,8 @@ export default function LoginPage() {
                 placeholder="ok2mkj@example.cz"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                maxLength={254}
                 className="w-full rounded-[1.25rem] border border-slate-900/10 bg-white/85 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-500/40"
                 required
               />
@@ -99,6 +121,8 @@ export default function LoginPage() {
                 placeholder="********"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                maxLength={128}
                 className="w-full rounded-[1.25rem] border border-slate-900/10 bg-white/85 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-500/40"
                 required
               />

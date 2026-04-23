@@ -7,17 +7,25 @@ import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/app/components/theme-toggle";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supabase";
 
-const publicNavigation = [
-  { href: "/blog", label: "Blog", hint: "Zápisky ze stanice a provozu" },
-  { href: "/mapa", label: "Mapa spojení", hint: "Přehled QSO na mapě" },
-  { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
+type NavigationItem = {
+  href: string;
+  label: string;
+  hint: string;
+  accent?: "sky" | "amber" | "emerald";
+};
+
+const publicNavigation: NavigationItem[] = [
+  { href: "/blog", label: "Blog", hint: "Zapisky ze stanice a provozu" },
+  { href: "/mapa", label: "Mapa spojeni", hint: "Prehled QSO na mape" },
+  { href: "/o-mne", label: "O mne", hint: "Neco malo o stanici a webu" },
 ];
 
-const privateNavigation = [
-  { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
-  { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
-  { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
-  { href: "/settings", label: "Nastavení", hint: "Domácí lokátor a další volby", accent: "sky" },
+const privateNavigation: NavigationItem[] = [
+  { href: "/mapa", label: "Mapa", hint: "Verejna i soukroma vrstva spojeni", accent: "sky" },
+  { href: "/dashboard#import", label: "Import", hint: "Nahrani a kontrola ADIF", accent: "amber" },
+  { href: "/dashboard#databaze", label: "Databaze", hint: "Filtry, DX a prehled QSO", accent: "emerald" },
+  { href: "/bezpecnost", label: "Bezpecnost", hint: "Kdo, kdy a jak pristoupil na web", accent: "amber" },
+  { href: "/settings", label: "Nastaveni", hint: "Domaci lokator a dalsi volby", accent: "sky" },
 ];
 
 function isActive(pathname: string, href: string, hash: string) {
@@ -31,6 +39,24 @@ function isActive(pathname: string, href: string, hash: string) {
   return pathname === route || pathname.startsWith(`${route}/`);
 }
 
+function getPrivateItemClasses(item: NavigationItem, active: boolean) {
+  if (item.accent === "sky") {
+    return active
+      ? "border-sky-900/12 bg-sky-950 text-sky-50"
+      : "border-sky-900/10 bg-sky-50/90 text-sky-950 hover:bg-white";
+  }
+
+  if (item.accent === "amber") {
+    return active
+      ? "border-amber-900/12 bg-amber-950 text-amber-50"
+      : "border-amber-900/10 bg-amber-50/90 text-amber-950 hover:bg-white";
+  }
+
+  return active
+    ? "border-emerald-900/12 bg-emerald-950 text-emerald-50"
+    : "border-emerald-900/10 bg-emerald-50/90 text-emerald-950 hover:bg-white";
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -39,35 +65,51 @@ export function Sidebar() {
   const [currentHash, setCurrentHash] = useState("");
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-
-    if (!supabase) {
-      return;
-    }
-
     let mounted = true;
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const loadAuthStatus = async () => {
+      if (!isSupabaseConfigured()) {
+        if (mounted) {
+          setIsLoggedIn(false);
+          setIsCheckingAuth(false);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/auth/status", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        const payload = (await response.json().catch(() => null)) as { authenticated?: boolean } | null;
+
+        if (!mounted) {
+          return;
+        }
+
+        setIsLoggedIn(Boolean(payload?.authenticated));
+      } catch {
+        if (!mounted) {
+          return;
+        }
+
+        setIsLoggedIn(false);
+      }
+
       if (!mounted) {
         return;
       }
 
-      setIsLoggedIn(Boolean(user));
       setIsCheckingAuth(false);
-    });
+    };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(Boolean(session?.user));
-      setIsCheckingAuth(false);
-    });
+    void loadAuthStatus();
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
     };
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     const updateHash = () => {
@@ -112,7 +154,7 @@ export function Sidebar() {
             </Link>
 
             <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-slate-500">Radioamatérská stanice</p>
+              <p className="text-xs uppercase tracking-[0.42em] text-slate-500">Radioamaterska stanice</p>
               <Link href="/" className="mt-3 inline-block font-display text-5xl leading-none text-slate-950 transition hover:text-sky-800">
                 OK2MKJ
               </Link>
@@ -141,31 +183,20 @@ export function Sidebar() {
 
             {isLoggedIn
               ? privateNavigation.map((item) => {
-                  const active = isActive(pathname, item.href, currentHash);
-                  const classes =
-                    item.accent === "sky"
-                      ? active
-                        ? "border-sky-900/12 bg-sky-950 text-sky-50"
-                        : "border-sky-900/10 bg-sky-50/90 text-sky-950 hover:bg-white"
-                      : item.accent === "amber"
-                        ? active
-                          ? "border-amber-900/12 bg-amber-950 text-amber-50"
-                          : "border-amber-900/10 bg-amber-50/90 text-amber-950 hover:bg-white"
-                        : active
-                          ? "border-emerald-900/12 bg-emerald-950 text-emerald-50"
-                          : "border-emerald-900/10 bg-emerald-50/90 text-emerald-950 hover:bg-white";
+                    const active = isActive(pathname, item.href, currentHash);
+                    const classes = getPrivateItemClasses(item, active);
 
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`group block rounded-[1.5rem] border px-4 py-4 transition hover:-translate-y-0.5 ${classes}`}
-                    >
-                      <p className="text-base font-semibold">{item.label}</p>
-                      <p className="mt-1 text-sm opacity-80">{item.hint}</p>
-                    </Link>
-                  );
-                })
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`group block rounded-[1.5rem] border px-4 py-4 transition hover:-translate-y-0.5 ${classes}`}
+                      >
+                        <p className="text-base font-semibold">{item.label}</p>
+                        <p className="mt-1 text-sm opacity-80">{item.hint}</p>
+                      </Link>
+                    );
+                  })
               : null}
           </nav>
         </div>
@@ -178,20 +209,20 @@ export function Sidebar() {
               onClick={handleLogout}
               className="block w-full rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Odhlásit se
+              Odhlasit se
             </button>
           ) : (
             <Link
               href="/login"
               className="block rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Přihlášení
+              Prihlaseni
             </Link>
           )}
 
           {!isSupabaseConfigured() && !isCheckingAuth ? (
             <p className="rounded-[1.2rem] border border-amber-300/30 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950/80">
-              Databázové připojení zatím není nastavené.
+              Databazove pripojeni zatim neni nastavene.
             </p>
           ) : null}
         </div>
