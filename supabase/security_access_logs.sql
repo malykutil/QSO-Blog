@@ -24,9 +24,17 @@ create table if not exists public.security_access_logs (
   user_id uuid,
   user_email text,
   ip_address text,
+  country_code text,
+  country_name text,
   user_agent text,
   referer text
 );
+
+alter table public.security_access_logs
+  add column if not exists country_code text;
+
+alter table public.security_access_logs
+  add column if not exists country_name text;
 
 create index if not exists security_access_logs_visited_at_idx
   on public.security_access_logs (visited_at desc);
@@ -42,6 +50,9 @@ create index if not exists security_access_logs_visitor_type_idx
 
 create index if not exists security_access_logs_user_id_idx
   on public.security_access_logs (user_id);
+
+create index if not exists security_access_logs_country_code_idx
+  on public.security_access_logs (country_code);
 
 alter table public.security_access_logs enable row level security;
 

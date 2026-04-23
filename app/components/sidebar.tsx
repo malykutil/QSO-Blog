@@ -17,6 +17,7 @@ type NavigationItem = {
 const publicNavigation: NavigationItem[] = [
   { href: "/blog", label: "Blog", hint: "Zapisky ze stanice a provozu" },
   { href: "/mapa", label: "Mapa spojeni", hint: "Prehled QSO na mape" },
+  { href: "/podminky", label: "Podminky", hint: "HamSolar + PSK reporter status" },
   { href: "/o-mne", label: "O mne", hint: "Neco malo o stanici a webu" },
 ];
 

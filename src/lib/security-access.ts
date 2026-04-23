@@ -8,6 +8,8 @@ export type SecurityAccessRecord = {
   userId: string | null;
   userEmail: string | null;
   ipAddress: string | null;
+  countryCode: string | null;
+  countryName: string | null;
   userAgent: string | null;
   referer: string | null;
 };
@@ -23,9 +25,25 @@ export function normalizeSecurityAccessRecord(row: Record<string, unknown>): Sec
     userId: typeof row.user_id === "string" ? row.user_id : null,
     userEmail: typeof row.user_email === "string" ? row.user_email : null,
     ipAddress: typeof row.ip_address === "string" ? row.ip_address : null,
+    countryCode: typeof row.country_code === "string" ? row.country_code : null,
+    countryName: typeof row.country_name === "string" ? row.country_name : null,
     userAgent: typeof row.user_agent === "string" ? row.user_agent : null,
     referer: typeof row.referer === "string" ? row.referer : null,
   };
+}
+
+export function countryFlagFromCode(countryCode: string | null) {
+  if (!countryCode) {
+    return "🌐";
+  }
+
+  const normalized = countryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalized)) {
+    return "🌐";
+  }
+
+  const codePoints = Array.from(normalized).map((char) => 127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
 }
 
 export function formatAccessDateTime(value: string) {
@@ -84,4 +102,3 @@ export function getDeviceLabel(userAgent: string | null) {
 
   return "Desktop";
 }
-

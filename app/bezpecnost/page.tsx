@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/app/components/app-shell";
 import {
+  countryFlagFromCode,
   formatAccessDateTime,
   fromDatetimeLocalValue,
   getDeviceLabel,
@@ -15,7 +16,7 @@ import {
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supabase";
 
 const accessSelectFields =
-  "id,created_at,visited_at,path,method,visitor_type,user_id,user_email,ip_address,user_agent,referer";
+  "id,created_at,visited_at,path,method,visitor_type,user_id,user_email,ip_address,country_code,country_name,user_agent,referer";
 
 function formatWho(record: SecurityAccessRecord) {
   if (record.userEmail) {
@@ -171,6 +172,8 @@ export default function BezpecnostPage() {
 
       const searchable = [
         formatWho(record),
+        record.countryName || "",
+        record.countryCode || "",
         record.path,
         record.ipAddress || "",
         record.referer || "",
@@ -367,6 +370,8 @@ export default function BezpecnostPage() {
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-slate-100 text-slate-600">
                 <tr>
+                  <th className="px-4 py-3 font-medium">Vlajka</th>
+                  <th className="px-4 py-3 font-medium">Země</th>
                   <th className="px-4 py-3 font-medium">Kdo</th>
                   <th className="px-4 py-3 font-medium">Kdy</th>
                   <th className="px-4 py-3 font-medium">Jak</th>
@@ -382,6 +387,15 @@ export default function BezpecnostPage() {
 
                   return (
                     <tr key={record.id} className="border-t border-slate-900/8 bg-white/80 align-top">
+                      <td className="px-4 py-4">
+                        <span className="text-2xl leading-none" role="img" aria-label={`Vlajka ${record.countryName ?? "nezname zeme"}`}>
+                          {countryFlagFromCode(record.countryCode)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-slate-950">{record.countryName || "--"}</p>
+                        <p className="mt-1 text-xs uppercase text-slate-500">{record.countryCode || "--"}</p>
+                      </td>
                       <td className="px-4 py-4">
                         <p className="font-medium text-slate-950">{formatWho(record)}</p>
                         <p className="mt-1 text-xs text-slate-500">{record.visitorType === "authenticated" ? "Prihlaseny" : "Anonymni"}</p>

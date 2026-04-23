@@ -5,6 +5,7 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { isSupabaseConfigured } from "@/src/lib/supabase";
 
 const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
+const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
 
 function isPrivatePath(pathname: string) {
   return privatePaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -33,6 +34,47 @@ function readClientIp(request: NextRequest) {
   return realIp?.trim() || null;
 }
 
+function readCountryCode(request: NextRequest) {
+  const countryCodeHeader =
+    request.headers.get("x-vercel-ip-country") ?? request.headers.get("cf-ipcountry") ?? request.headers.get("x-country-code");
+
+  if (!countryCodeHeader) {
+    return null;
+  }
+
+  const countryCode = countryCodeHeader.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return null;
+  }
+
+  return countryCode;
+}
+
+function readCountryName(countryCode: string | null) {
+  if (!countryCode) {
+    return null;
+  }
+
+  try {
+    if (typeof Intl.DisplayNames !== "function") {
+      return countryCode;
+    }
+
+    const displayNames = new Intl.DisplayNames(["cs-CZ", "en"], { type: "region" });
+    return displayNames.of(countryCode) ?? countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
+function shouldSkipAccessLog(email: string | null | undefined) {
+  if (!email) {
+    return false;
+  }
+
+  return accessLogExcludedEmails.has(email.trim().toLowerCase());
+}
+
 async function logAccess(payload: {
   path: string;
   method: string;
@@ -40,6 +82,8 @@ async function logAccess(payload: {
   userId: string | null;
   userEmail: string | null;
   ipAddress: string | null;
+  countryCode: string | null;
+  countryName: string | null;
   userAgent: string | null;
   referer: string | null;
 }) {
@@ -61,6 +105,8 @@ async function logAccess(payload: {
       user_id: payload.userId,
       user_email: payload.userEmail,
       ip_address: payload.ipAddress,
+      country_code: payload.countryCode,
+      country_name: payload.countryName,
       user_agent: payload.userAgent,
       referer: payload.referer,
     });
@@ -116,18 +162,24 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     return NextResponse.next();
   }
 
-  event.waitUntil(
-    logAccess({
-      path: `${pathname}${search}`,
-      method: request.method,
-      visitorType: user ? "authenticated" : "anon",
-      userId: user?.id ?? null,
-      userEmail: user?.email ?? null,
-      ipAddress: readClientIp(request),
-      userAgent: request.headers.get("user-agent"),
-      referer: request.headers.get("referer"),
-    }),
-  );
+  if (!shouldSkipAccessLog(user?.email)) {
+    const countryCode = readCountryCode(request);
+
+    event.waitUntil(
+      logAccess({
+        path: `${pathname}${search}`,
+        method: request.method,
+        visitorType: user ? "authenticated" : "anon",
+        userId: user?.id ?? null,
+        userEmail: user?.email ?? null,
+        ipAddress: readClientIp(request),
+        countryCode,
+        countryName: readCountryName(countryCode),
+        userAgent: request.headers.get("user-agent"),
+        referer: request.headers.get("referer"),
+      }),
+    );
+  }
 
   if (needsAuth && !user) {
     const nextPath = `${pathname}${search}`;
