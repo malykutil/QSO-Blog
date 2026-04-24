@@ -65,6 +65,7 @@ export default function BezpecnostPage() {
   const [deviceFilter, setDeviceFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [ignoreCzech, setIgnoreCzech] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedTime, setEditedTime] = useState("");
   const [savingTime, setSavingTime] = useState(false);
@@ -169,6 +170,13 @@ export default function BezpecnostPage() {
       const matchesMethod = !methodFilter || method === methodFilter.toUpperCase();
       const matchesDevice = !deviceFilter || device === deviceFilter;
       const matchesDate = recordMatchesDateRange(record, dateFrom, dateTo);
+      const normalizedCountryCode = (record.countryCode ?? "").trim().toUpperCase();
+      const normalizedCountryName = (record.countryName ?? "").trim().toLowerCase();
+      const isCzech =
+        normalizedCountryCode === "CZ" ||
+        normalizedCountryName.includes("česk") ||
+        normalizedCountryName.includes("czech");
+      const matchesCountry = !ignoreCzech || !isCzech;
 
       const searchable = [
         formatWho(record),
@@ -186,9 +194,9 @@ export default function BezpecnostPage() {
 
       const matchesSearch = !loweredSearch || searchable.includes(loweredSearch);
 
-      return matchesVisitorType && matchesMethod && matchesDevice && matchesDate && matchesSearch;
+      return matchesVisitorType && matchesMethod && matchesDevice && matchesDate && matchesSearch && matchesCountry;
     });
-  }, [dateFrom, dateTo, deviceFilter, methodFilter, records, search, visitorTypeFilter]);
+  }, [dateFrom, dateTo, deviceFilter, ignoreCzech, methodFilter, records, search, visitorTypeFilter]);
 
   const summary = useMemo(() => {
     const total = filteredRecords.length;
@@ -360,6 +368,16 @@ export default function BezpecnostPage() {
                 className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
               />
             </div>
+
+            <label className="flex items-center gap-3 rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 text-sm text-slate-700 xl:col-span-6">
+              <input
+                type="checkbox"
+                checked={ignoreCzech}
+                onChange={(event) => setIgnoreCzech(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Ignorovat Česko (CZ)
+            </label>
           </div>
 
           {status ? (
