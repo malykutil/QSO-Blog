@@ -87,7 +87,7 @@ export function fromDatetimeLocalValue(value: string) {
 
 export function getDeviceLabel(userAgent: string | null) {
   if (!userAgent) {
-    return "Neznamo";
+    return "Neznámo";
   }
 
   const lower = userAgent.toLowerCase();

@@ -2,8 +2,9 @@
 
 import "leaflet/dist/leaflet.css";
 
-import { useMemo } from "react";
-import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, Tooltip } from "react-leaflet";
+import { useEffect, useMemo } from "react";
+import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import terminator from "@joergdietrich/leaflet.terminator";
 
 import { maidenheadToLatLon } from "@/src/lib/qso-data";
 import { readHomeLocator } from "@/src/lib/station-settings";
@@ -45,6 +46,35 @@ function formatUnixSeconds(value: number) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value * 1000));
+}
+
+function DayNightOverlay() {
+  const map = useMap();
+
+  useEffect(() => {
+    const layer = terminator({
+      resolution: 3,
+      longitudeRange: 360,
+      color: "#0f172a",
+      opacity: 0.55,
+      weight: 1,
+      fillColor: "#0b1224",
+      fillOpacity: 0.24,
+    });
+
+    layer.addTo(map);
+
+    const interval = window.setInterval(() => {
+      layer.setTime(new Date());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(interval);
+      layer.remove();
+    };
+  }, [map]);
+
+  return null;
 }
 
 export function PskCoverageMap({ spots }: { spots: PskSpot[] }) {
@@ -89,36 +119,16 @@ export function PskCoverageMap({ spots }: { spots: PskSpot[] }) {
     return maidenheadToLatLon(readHomeLocator());
   }, [spots]);
 
-  const center = useMemo(() => {
-    if (homeCoords.lat !== null && homeCoords.lon !== null) {
-      return homeCoords;
-    }
-
-    if (!mapSpots.length) {
-      return { lat: 50.08, lon: 14.43 };
-    }
-
-    const sum = mapSpots.reduce(
-      (acc, spot) => ({
-        lat: acc.lat + spot.lat,
-        lon: acc.lon + spot.lon,
-      }),
-      { lat: 0, lon: 0 },
-    );
-
-    return {
-      lat: sum.lat / mapSpots.length,
-      lon: sum.lon / mapSpots.length,
-    };
-  }, [homeCoords, mapSpots]);
+  const worldCenter = useMemo(() => ({ lat: 20, lon: 0 }), []);
 
   return (
     <div className="overflow-hidden rounded-[1.8rem] border border-slate-900/10">
-      <MapContainer center={[center.lat, center.lon]} zoom={4} scrollWheelZoom className="h-[42rem] w-full">
+      <MapContainer center={[worldCenter.lat, worldCenter.lon]} zoom={1} minZoom={1} scrollWheelZoom className="h-[42rem] w-full">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        <DayNightOverlay />
 
         {homeCoords.lat !== null && homeCoords.lon !== null ? (
           <CircleMarker
@@ -134,7 +144,7 @@ export function PskCoverageMap({ spots }: { spots: PskSpot[] }) {
             <Popup>
               <div className="text-sm">
                 <p className="font-semibold">Tvoje stanice</p>
-                <p>Zdrojovy bod mapy slysetelnosti</p>
+                <p>Zdrojový bod mapy slyšitelnosti</p>
               </div>
             </Popup>
           </CircleMarker>
@@ -171,13 +181,13 @@ export function PskCoverageMap({ spots }: { spots: PskSpot[] }) {
             <Popup>
               <div className="space-y-1 text-sm">
                 <p className="font-semibold">{spot.receiverCallsign}</p>
-                <p>{spot.receiverDXCC || "Neznama zeme"}</p>
+                <p>{spot.receiverDXCC || "Neznámá země"}</p>
                 <p>{spot.receiverLocator || "--"}</p>
                 <p>
                   {spot.mode || "--"} / SNR {spot.snr || "--"}
                 </p>
                 <p>{formatFrequencyMhz(spot.frequency)}</p>
-                <p>Naposledy slyset: {formatUnixSeconds(spot.flowStartSeconds)}</p>
+                <p>Naposledy slyšet: {formatUnixSeconds(spot.flowStartSeconds)}</p>
               </div>
             </Popup>
             <Tooltip direction="top" offset={[0, -8]} opacity={0.92}>

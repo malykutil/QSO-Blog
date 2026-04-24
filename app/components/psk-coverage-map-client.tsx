@@ -10,7 +10,7 @@ const PskCoverageMapInner = dynamic(
     ssr: false,
     loading: () => (
       <div className="glass-panel rounded-[2rem] p-8 text-slate-700">
-        Nacitam mapu slysetelnosti...
+        Načítám mapu slyšitelnosti...
       </div>
     ),
   },
@@ -19,4 +19,3 @@ const PskCoverageMapInner = dynamic(
 export function PskCoverageMapClient({ spots }: { spots: PskSpot[] }) {
   return <PskCoverageMapInner spots={spots} />;
 }
-

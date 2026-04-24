@@ -14,10 +14,7 @@ type PskSpot = {
   flowStartSeconds: number;
 };
 
-type FetchResult = {
-  xml: string;
-  source: "retrieve" | "query";
-};
+type FetchSource = "retrieve" | "pskquery" | "query" | "cache";
 
 type CachedPayload = {
   storedAt: number;
@@ -29,13 +26,26 @@ type CachedPayload = {
     uniqueReceivers: number;
     uniqueCountries: number;
     spots: PskSpot[];
-    source: "retrieve" | "query" | "cache";
+    source: FetchSource;
     fetchedAt: string;
+    latestSeenAt: string | null;
   };
+};
+
+type PskQueryParseResult = {
+  latestSeenAt: number | null;
+  spots: PskSpot[];
 };
 
 const pskResponseCache = new Map<string, CachedPayload>();
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const PSK_USER_AGENT = "Mozilla/5.0 (compatible; OK2MKJ-Logbook/1.0; +https://ok2mkj.vercel.app)";
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function decodeEntities(value: string) {
   return value
@@ -59,7 +69,7 @@ function parseAttributes(value: string) {
   return result;
 }
 
-function parseReceptionReports(xml: string): PskSpot[] {
+function parseXmlReceptionReports(xml: string): PskSpot[] {
   const spots: PskSpot[] = [];
   const regex = /<receptionReport\s+([^/>]+?)\s*\/>/g;
 
@@ -85,6 +95,56 @@ function parseReceptionReports(xml: string): PskSpot[] {
   return spots
     .filter((spot) => spot.receiverCallsign && spot.senderCallsign)
     .sort((a, b) => b.flowStartSeconds - a.flowStartSeconds);
+}
+
+function parseJsonpPayload(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^[^(]+\(([\s\S]*)\);?\s*$/);
+
+  if (!match) {
+    throw new Error("PSK query response is not valid JSONP.");
+  }
+
+  return JSON.parse(match[1]) as Record<string, unknown>;
+}
+
+function parsePskQueryReports(text: string): PskQueryParseResult {
+  const payload = parseJsonpPayload(text);
+  const reports = Array.isArray(payload.receptionReport) ? payload.receptionReport : [];
+
+  let latestSeenAt: number | null = null;
+  const senderSearch = payload.senderSearch;
+  if (Array.isArray(senderSearch) && senderSearch.length > 0 && typeof senderSearch[0] === "object" && senderSearch[0] !== null) {
+    const maybeRecent = Number((senderSearch[0] as Record<string, unknown>).recentFlowStartSeconds ?? 0);
+    if (Number.isFinite(maybeRecent) && maybeRecent > 0) {
+      latestSeenAt = maybeRecent;
+    }
+  }
+
+  const spots = reports
+    .map((row) => {
+      if (typeof row !== "object" || row === null) {
+        return null;
+      }
+
+      const item = row as Record<string, unknown>;
+
+      return {
+        receiverCallsign: String(item.receiverCallsign ?? ""),
+        receiverLocator: String(item.receiverLocator ?? ""),
+        receiverDXCC: String(item.receiverDXCC ?? item.receiverRegion ?? ""),
+        senderCallsign: String(item.senderCallsign ?? ""),
+        senderLocator: String(item.senderLocator ?? ""),
+        mode: String(item.mode ?? ""),
+        snr: String(item.sNR ?? ""),
+        frequency: String(item.frequency ?? ""),
+        flowStartSeconds: Number(item.flowStartSeconds ?? 0),
+      } satisfies PskSpot;
+    })
+    .filter((item): item is PskSpot => item !== null && Boolean(item.receiverCallsign) && Boolean(item.senderCallsign))
+    .sort((a, b) => b.flowStartSeconds - a.flowStartSeconds);
+
+  return { latestSeenAt, spots };
 }
 
 function callsignMatches(sender: string, target: string) {
@@ -131,32 +191,43 @@ function filterSpots(spots: PskSpot[], query: { callsign: string; seconds: numbe
   });
 }
 
-async function fetchXmlWithRetries(url: string, retries = 3) {
+async function fetchTextWithRetries(url: string, options?: { referer?: string; retries?: number }) {
+  const retries = options?.retries ?? 3;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/xml,text/xml,application/json,text/plain,*/*",
+        "User-Agent": PSK_USER_AGENT,
+      };
+
+      if (options?.referer) {
+        headers.Referer = options.referer;
+      }
+
       const response = await fetch(url, {
         method: "GET",
         cache: "no-store",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; OK2MKJ-Logbook/1.0; +https://ok2mkj.vercel.app)",
-          Accept: "application/xml,text/xml,*/*",
-        },
+        headers,
       });
 
       if (response.ok) {
         return await response.text();
       }
+
+      lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
       lastError = error;
     }
+
+    await sleep(600 + attempt * 500);
   }
 
   throw lastError ?? new Error("PSK endpoint did not return success.");
 }
 
-async function fetchPskXml(callsign: string, seconds: number, bandRange: [number, number] | null): Promise<FetchResult> {
+async function fetchFromRetrieve(callsign: string, seconds: number, bandRange: [number, number] | null) {
   const retrieveParams = new URLSearchParams({
     senderCallsign: callsign,
     flowStartSeconds: `-${seconds}`,
@@ -169,17 +240,40 @@ async function fetchPskXml(callsign: string, seconds: number, bandRange: [number
   }
 
   const retrieveUrl = `https://retrieve.pskreporter.info/query?${retrieveParams.toString()}`;
+  const xml = await fetchTextWithRetries(retrieveUrl, { retries: 2 });
+  const spots = parseXmlReceptionReports(xml);
+  return filterSpots(spots, { callsign, seconds, bandRange });
+}
 
-  try {
-    const xml = await fetchXmlWithRetries(retrieveUrl, 2);
-    return { xml, source: "retrieve" };
-  } catch {
-    // Fall through to query mirror.
-  }
+async function fetchFromPskQuery(callsign: string, seconds: number, bandRange: [number, number] | null) {
+  const params = new URLSearchParams({
+    callback: "doNothing",
+    mc_version: "2025.11.28.1033",
+    pskvers: "2025.11.28.1032",
+    statistics: "1",
+    noactive: "1",
+    nolocator: "1",
+    flowStartSeconds: `-${seconds}`,
+    callsign,
+  });
 
-  const queryUrl = "https://pskreporter.info/query/";
-  const xml = await fetchXmlWithRetries(queryUrl, 3);
-  return { xml, source: "query" };
+  const url = `https://pskreporter.info/cgi-bin/pskquery5.pl?${params.toString()}`;
+  const text = await fetchTextWithRetries(url, {
+    referer: "https://pskreporter.info/pskmap.html",
+    retries: 4,
+  });
+
+  const parsed = parsePskQueryReports(text);
+  return {
+    latestSeenAt: parsed.latestSeenAt,
+    spots: filterSpots(parsed.spots, { callsign, seconds, bandRange }),
+  };
+}
+
+async function fetchFromQueryMirror(callsign: string, seconds: number, bandRange: [number, number] | null) {
+  const text = await fetchTextWithRetries("https://pskreporter.info/query/", { retries: 3 });
+  const spots = parseXmlReceptionReports(text);
+  return filterSpots(spots, { callsign, seconds, bandRange });
 }
 
 export async function GET(request: NextRequest) {
@@ -193,22 +287,72 @@ export async function GET(request: NextRequest) {
   const bandRange = getBandRange(rawBand);
   const cacheKey = `${callsign}|${rawBand}|${seconds}`;
 
+  let latestSeenAt: number | null = null;
+  let source: FetchSource = "query";
+  let spots: PskSpot[] = [];
+  let atLeastOneFetchSucceeded = false;
+
   try {
-    const fetched = await fetchPskXml(callsign, seconds, bandRange);
-    const parsed = parseReceptionReports(fetched.xml);
-    const spots = filterSpots(parsed, { callsign, seconds, bandRange }).slice(0, 250);
-    const uniqueReceivers = new Set(spots.map((spot) => spot.receiverCallsign)).size;
-    const uniqueCountries = new Set(spots.map((spot) => spot.receiverDXCC).filter(Boolean)).size;
+    try {
+      const retrieveSpots = await fetchFromRetrieve(callsign, seconds, bandRange);
+      atLeastOneFetchSucceeded = true;
+
+      if (retrieveSpots.length > 0) {
+        source = "retrieve";
+        spots = retrieveSpots;
+      }
+    } catch {
+      // Continue with PSK query fallback.
+    }
+
+    if (spots.length === 0) {
+      try {
+        const pskQuery = await fetchFromPskQuery(callsign, seconds, bandRange);
+        atLeastOneFetchSucceeded = true;
+        latestSeenAt = pskQuery.latestSeenAt;
+
+        if (pskQuery.spots.length > 0) {
+          source = "pskquery";
+          spots = pskQuery.spots;
+        }
+      } catch {
+        // Continue with query mirror fallback.
+      }
+    }
+
+    if (spots.length === 0) {
+      try {
+        const querySpots = await fetchFromQueryMirror(callsign, seconds, bandRange);
+        atLeastOneFetchSucceeded = true;
+
+        if (querySpots.length > 0) {
+          source = "query";
+          spots = querySpots;
+        }
+      } catch {
+        // Last fallback handled below.
+      }
+    }
+
+    if (!atLeastOneFetchSucceeded) {
+      throw new Error("No PSK fetch source succeeded.");
+    }
+
+    const limitedSpots = spots.slice(0, 250);
+    const uniqueReceivers = new Set(limitedSpots.map((spot) => spot.receiverCallsign)).size;
+    const uniqueCountries = new Set(limitedSpots.map((spot) => spot.receiverDXCC).filter(Boolean)).size;
+
     const payload = {
       callsign,
       band: rawBand,
       seconds,
-      count: spots.length,
+      count: limitedSpots.length,
       uniqueReceivers,
       uniqueCountries,
-      spots,
-      source: fetched.source,
+      spots: limitedSpots,
+      source,
       fetchedAt: new Date().toISOString(),
+      latestSeenAt: latestSeenAt ? new Date(latestSeenAt * 1000).toISOString() : null,
     } as const;
 
     if (payload.count > 0) {
@@ -218,12 +362,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json(
-      payload,
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
-    );
+    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch {
     const cached = pskResponseCache.get(cacheKey);
+
     if (cached && cached.payload.count > 0 && Date.now() - cached.storedAt < CACHE_TTL_MS) {
       return NextResponse.json(
         {
@@ -236,7 +378,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "PSK Reporter nelze nacist. Zkus to prosim za chvili." },
+      { error: "PSK Reporter nelze načíst. Zkus to prosím za chvíli." },
       { status: 502, headers: { "Cache-Control": "no-store, max-age=0" } },
     );
   }

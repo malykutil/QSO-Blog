@@ -15,18 +15,18 @@ type NavigationItem = {
 };
 
 const publicNavigation: NavigationItem[] = [
-  { href: "/blog", label: "Blog", hint: "Zapisky ze stanice a provozu" },
-  { href: "/mapa", label: "Mapa spojeni", hint: "Prehled QSO na mape" },
-  { href: "/podminky", label: "Podminky", hint: "HamSolar + PSK reporter status" },
-  { href: "/o-mne", label: "O mne", hint: "Neco malo o stanici a webu" },
+  { href: "/blog", label: "Blog", hint: "Zápisky ze stanice a provozu" },
+  { href: "/mapa", label: "Mapa spojení", hint: "Přehled QSO na mapě" },
+  { href: "/podminky", label: "Podmínky", hint: "HamSolar + PSK Reporter stav" },
+  { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
 ];
 
 const privateNavigation: NavigationItem[] = [
-  { href: "/mapa", label: "Mapa", hint: "Verejna i soukroma vrstva spojeni", accent: "sky" },
-  { href: "/dashboard#import", label: "Import", hint: "Nahrani a kontrola ADIF", accent: "amber" },
-  { href: "/dashboard#databaze", label: "Databaze", hint: "Filtry, DX a prehled QSO", accent: "emerald" },
-  { href: "/bezpecnost", label: "Bezpecnost", hint: "Kdo, kdy a jak pristoupil na web", accent: "amber" },
-  { href: "/settings", label: "Nastaveni", hint: "Domaci lokator a dalsi volby", accent: "sky" },
+  { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
+  { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
+  { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
+  { href: "/bezpecnost", label: "Bezpečnost", hint: "Kdo, kdy a jak přistoupil na web", accent: "amber" },
+  { href: "/settings", label: "Nastavení", hint: "Domácí lokátor a další volby", accent: "sky" },
 ];
 
 function isActive(pathname: string, href: string, hash: string) {
@@ -155,7 +155,7 @@ export function Sidebar() {
             </Link>
 
             <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-slate-500">Radioamaterska stanice</p>
+              <p className="text-xs uppercase tracking-[0.42em] text-slate-500">Radioamatérská stanice</p>
               <Link href="/" className="mt-3 inline-block font-display text-5xl leading-none text-slate-950 transition hover:text-sky-800">
                 OK2MKJ
               </Link>
@@ -210,20 +210,20 @@ export function Sidebar() {
               onClick={handleLogout}
               className="block w-full rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Odhlasit se
+              Odhlásit se
             </button>
           ) : (
             <Link
               href="/login"
               className="block rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              Prihlaseni
+              Přihlášení
             </Link>
           )}
 
           {!isSupabaseConfigured() && !isCheckingAuth ? (
             <p className="rounded-[1.2rem] border border-amber-300/30 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-950/80">
-              Databazove pripojeni zatim neni nastavene.
+              Databázové připojení zatím není nastavené.
             </p>
           ) : null}
         </div>

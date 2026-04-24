@@ -24,10 +24,10 @@ function formatWho(record: SecurityAccessRecord) {
   }
 
   if (record.visitorType === "authenticated") {
-    return record.userId ? `Prihlaseny (${record.userId.slice(0, 8)})` : "Prihlaseny uzivatel";
+    return record.userId ? `Přihlášený (${record.userId.slice(0, 8)})` : "Přihlášený uživatel";
   }
 
-  return "Anonymni navstevnik";
+  return "Anonymní návštěvník";
 }
 
 function recordMatchesDateRange(record: SecurityAccessRecord, dateFrom: string, dateTo: string) {
@@ -74,7 +74,7 @@ export default function BezpecnostPage() {
       const supabase = getSupabaseBrowserClient();
 
       if (!supabase) {
-        setStatus("Databazove pripojeni neni pripraveno.");
+        setStatus("Databázové připojení není připraveno.");
         setLoading(false);
         return;
       }
@@ -96,7 +96,7 @@ export default function BezpecnostPage() {
 
       if (ownerError) {
         if (ownerError.code === "42P01") {
-          setStatus("Chybi tabulka app_owners. Spust v Supabase SQL skript security_access_logs.sql.");
+          setStatus("Chybí tabulka app_owners. Spusť v Supabase SQL skript security_access_logs.sql.");
           setLoading(false);
           return;
         }
@@ -118,14 +118,14 @@ export default function BezpecnostPage() {
 
       if (error) {
         if (error.code === "42P01") {
-          setStatus("Chybi tabulka security_access_logs. Spust v Supabase SQL skript security_access_logs.sql.");
+          setStatus("Chybí tabulka security_access_logs. Spusť v Supabase SQL skript security_access_logs.sql.");
           setRecords([]);
           setLoading(false);
           return;
         }
 
         setStatus(
-          "Logy bezpecnosti nejdou nacist. Zkontroluj, jestli je v Supabase spustene SQL `supabase/security_access_logs.sql`.",
+          "Logy bezpečnosti nejdou načíst. Zkontroluj, jestli je v Supabase spuštěné SQL `supabase/security_access_logs.sql`.",
         );
         setRecords([]);
         setLoading(false);
@@ -134,7 +134,7 @@ export default function BezpecnostPage() {
 
       const normalized = (data ?? []).map((row) => normalizeSecurityAccessRecord(row));
       setRecords(normalized);
-      setStatus(`Nacteno ${normalized.length} pristupu.`);
+      setStatus(`Načteno ${normalized.length} přístupů.`);
       setLoading(false);
     };
 
@@ -214,13 +214,13 @@ export default function BezpecnostPage() {
     const newVisitedAt = fromDatetimeLocalValue(editedTime);
 
     if (!newVisitedAt) {
-      setStatus("Zadany cas nema platny format.");
+      setStatus("Zadaný čas nemá platný formát.");
       return;
     }
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      setStatus("Databazove pripojeni neni pripraveno.");
+      setStatus("Databázové připojení není připraveno.");
       return;
     }
 
@@ -234,21 +234,21 @@ export default function BezpecnostPage() {
     setSavingTime(false);
 
     if (error) {
-      setStatus(`Uprava casu selhala: ${error.message}`);
+      setStatus(`Úprava času selhala: ${error.message}`);
       return;
     }
 
     setRecords((current) =>
       current.map((record) => (record.id === id ? { ...record, visitedAt: newVisitedAt } : record)),
     );
-    setStatus("Cas pristupu byl upraven.");
+    setStatus("Čas přístupu byl upraven.");
     cancelEditing();
   };
 
   if (loading) {
     return (
       <AppShell contentClassName="flex items-center justify-center">
-        <p className="text-slate-600">Nacitam bezpecnostni prehled...</p>
+        <p className="text-slate-600">Načítám bezpečnostní přehled...</p>
       </AppShell>
     );
   }
@@ -257,10 +257,10 @@ export default function BezpecnostPage() {
     return (
       <AppShell contentClassName="flex items-center">
         <div className="mx-auto w-full max-w-3xl rounded-[2rem] border border-amber-300/30 bg-amber-50 p-8">
-          <p className="text-sm uppercase tracking-[0.35em] text-amber-900/70">Bezpecnost</p>
-          <h1 className="mt-3 font-display text-4xl text-slate-950">Chybi platna Supabase konfigurace</h1>
+          <p className="text-sm uppercase tracking-[0.35em] text-amber-900/70">Bezpečnost</p>
+          <h1 className="mt-3 font-display text-4xl text-slate-950">Chybí platná Supabase konfigurace</h1>
           <p className="mt-4 max-w-2xl leading-7 text-slate-700">
-            Tato sekce potrebuje nastavene `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+            Tato sekce potřebuje nastavené `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
           </p>
         </div>
       </AppShell>
@@ -273,26 +273,26 @@ export default function BezpecnostPage() {
         <section className="relative overflow-hidden rounded-[2.4rem] border border-slate-900/8 bg-[linear-gradient(135deg,_#0a1420_0%,_#14314c_42%,_#1f5d8f_100%)] p-7 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)] md:p-9">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,_rgba(255,165,96,0.22),_transparent_18%),radial-gradient(circle_at_left_bottom,_rgba(93,183,255,0.16),_transparent_26%)]" />
           <div className="relative">
-            <p className="text-xs uppercase tracking-[0.35em] text-sky-100/70">Bezpecnost</p>
-            <h1 className="mt-3 font-display text-5xl leading-tight">Prehled pristupu na web</h1>
+            <p className="text-xs uppercase tracking-[0.35em] text-sky-100/70">Bezpečnost</p>
+            <h1 className="mt-3 font-display text-5xl leading-tight">Přehled přístupů na web</h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-sky-50/80">
-              Filtruj pristupy podle toho, kdo prisel, kdy prisel a jakym zpusobem web navstivil. Cas jednotliveho
-              zaznamu muzes upravit primo v tabulce.
+              Filtruj přístupy podle toho, kdo přišel, kdy přišel a jakým způsobem web navštívil. Čas jednotlivého
+              záznamu můžeš upravit přímo v tabulce.
             </p>
           </div>
         </section>
 
         <section className="grid gap-4 md:grid-cols-4">
           <div className="glass-panel rounded-[2rem] p-6">
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Zaznamu celkem</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Záznamů celkem</p>
             <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.total}</p>
           </div>
           <div className="glass-panel rounded-[2rem] p-6">
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Anonymni</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Anonymní</p>
             <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.anon}</p>
           </div>
           <div className="glass-panel rounded-[2rem] p-6">
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Prihlaseni</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Přihlášení</p>
             <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.authenticated}</p>
           </div>
           <div className="rounded-[2rem] border border-red-500/30 bg-red-950 p-6 text-white shadow-[0_20px_50px_rgba(127,29,29,0.18)]">
@@ -315,9 +315,9 @@ export default function BezpecnostPage() {
               onChange={(event) => setVisitorTypeFilter(event.target.value as "" | "anon" | "authenticated")}
               className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
             >
-              <option value="">Kdo: vsichni</option>
-              <option value="anon">Kdo: anonymni</option>
-              <option value="authenticated">Kdo: prihlaseni</option>
+              <option value="">Kdo: všichni</option>
+              <option value="anon">Kdo: anonymní</option>
+              <option value="authenticated">Kdo: přihlášení</option>
             </select>
 
             <select
@@ -325,7 +325,7 @@ export default function BezpecnostPage() {
               onChange={(event) => setMethodFilter(event.target.value)}
               className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
             >
-              <option value="">Jak: vsechny metody</option>
+              <option value="">Jak: všechny metody</option>
               {methods.map((method) => (
                 <option key={method} value={method}>
                   {method}
@@ -338,7 +338,7 @@ export default function BezpecnostPage() {
               onChange={(event) => setDeviceFilter(event.target.value)}
               className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
             >
-              <option value="">Jak: vsechna zarizeni</option>
+              <option value="">Jak: všechna zařízení</option>
               {devices.map((device) => (
                 <option key={device} value={device}>
                   {device}
@@ -388,7 +388,7 @@ export default function BezpecnostPage() {
                   return (
                     <tr key={record.id} className="border-t border-slate-900/8 bg-white/80 align-top">
                       <td className="px-4 py-4">
-                        <span className="text-2xl leading-none" role="img" aria-label={`Vlajka ${record.countryName ?? "nezname zeme"}`}>
+                        <span className="text-2xl leading-none" role="img" aria-label={`Vlajka ${record.countryName ?? "neznámá země"}`}>
                           {countryFlagFromCode(record.countryCode)}
                         </span>
                       </td>
@@ -398,7 +398,7 @@ export default function BezpecnostPage() {
                       </td>
                       <td className="px-4 py-4">
                         <p className="font-medium text-slate-950">{formatWho(record)}</p>
-                        <p className="mt-1 text-xs text-slate-500">{record.visitorType === "authenticated" ? "Prihlaseny" : "Anonymni"}</p>
+                        <p className="mt-1 text-xs text-slate-500">{record.visitorType === "authenticated" ? "Přihlášený" : "Anonymní"}</p>
                       </td>
                       <td className="px-4 py-4">
                         {isEditing ? (
@@ -428,14 +428,14 @@ export default function BezpecnostPage() {
                               disabled={savingTime}
                               className="rounded-full bg-slate-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
                             >
-                              {savingTime ? "Ukladam..." : "Ulozit cas"}
+                              {savingTime ? "Ukládám..." : "Uložit čas"}
                             </button>
                             <button
                               type="button"
                               onClick={cancelEditing}
                               className="rounded-full border border-slate-900/12 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                             >
-                              Zrusit
+                              Zrušit
                             </button>
                           </div>
                         ) : (
@@ -444,7 +444,7 @@ export default function BezpecnostPage() {
                             onClick={() => startEditing(record)}
                             className="rounded-full border border-slate-900/12 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                           >
-                            Upravit cas
+                            Upravit čas
                           </button>
                         )}
                       </td>

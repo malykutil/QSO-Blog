@@ -5,7 +5,7 @@ export type PskBandOption = {
 };
 
 export const pskBandOptions: PskBandOption[] = [
-  { value: "all", label: "Vsechna pasma" },
+  { value: "all", label: "Všechna pásma" },
   { value: "160m", label: "160m", range: [1800000, 2000000] },
   { value: "80m", label: "80m", range: [3500000, 3800000] },
   { value: "60m", label: "60m", range: [5250000, 5450000] },
@@ -46,4 +46,3 @@ export function normalizePskTime(value: number) {
   const max = 172800;
   return Math.min(max, Math.max(min, Math.floor(value)));
 }
-
