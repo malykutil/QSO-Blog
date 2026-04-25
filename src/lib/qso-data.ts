@@ -1,3 +1,5 @@
+import { findDxcc } from "@ham-core/fast-dxcc";
+
 export type QsoRecord = {
   id?: number | string;
   callsign: string;
@@ -18,6 +20,16 @@ export type QsoRecord = {
 export type EnrichedQsoRecord = QsoRecord & {
   continent: string;
   distanceKm: number | null;
+};
+
+type Coordinates = {
+  lat: number | null;
+  lon: number | null;
+};
+
+type CoordinateResolution = Coordinates & {
+  source: "locator" | "prefix" | "none";
+  country?: string;
 };
 
 export const qsoSelectFields =
@@ -107,9 +119,16 @@ export const fallbackQsoRecords: QsoRecord[] = [
 ];
 
 export function normalizeQsoRecord(row: Record<string, unknown>): QsoRecord {
+  const callsign = (row.callsign as string | null) ?? "";
+  const locator = (row.locator as string | null) ?? "";
+  const resolvedCoordinates = resolveCoordinatesForQso({ callsign, locator });
+  const hasStoredLat = typeof row.lat === "number";
+  const hasStoredLon = typeof row.lon === "number";
+  const shouldForcePrefix = normalizeLocator(locator) === "JN99" && resolvedCoordinates.source === "prefix";
+
   return {
     id: row.id as string | number | undefined,
-    callsign: (row.callsign as string | null) ?? "",
+    callsign,
     band: (row.band as string | null) ?? "",
     mode: (row.mode as string | null) ?? "",
     date: (row.date as string | null) ?? "",
@@ -117,9 +136,9 @@ export function normalizeQsoRecord(row: Record<string, unknown>): QsoRecord {
     operator: (row.operator as string | null) ?? "",
     rstSent: (row.rst_sent as string | null) ?? "",
     rstRcvd: (row.rst_rcvd as string | null) ?? "",
-    locator: (row.locator as string | null) ?? "",
-    lat: typeof row.lat === "number" ? row.lat : null,
-    lon: typeof row.lon === "number" ? row.lon : null,
+    locator,
+    lat: shouldForcePrefix ? resolvedCoordinates.lat : hasStoredLat ? (row.lat as number) : resolvedCoordinates.lat,
+    lon: shouldForcePrefix ? resolvedCoordinates.lon : hasStoredLon ? (row.lon as number) : resolvedCoordinates.lon,
     note: (row.note as string | null) ?? "",
     isPublic: Boolean(row.is_public),
   };
@@ -226,6 +245,72 @@ export function maidenheadToLatLon(locator: string | null | undefined) {
     lat: Number((lat + latStep / 2).toFixed(6)),
     lon: Number((lon + lonStep / 2).toFixed(6)),
   };
+}
+
+function normalizeLocator(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase();
+}
+
+function normalizeCallsign(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase();
+}
+
+export function resolveCoordinatesByCallsignPrefix(callsign: string | null | undefined): CoordinateResolution {
+  const normalizedCallsign = normalizeCallsign(callsign);
+
+  if (!normalizedCallsign) {
+    return { lat: null, lon: null, source: "none" };
+  }
+
+  let dxccResult: ReturnType<typeof findDxcc> | null = null;
+
+  try {
+    dxccResult = findDxcc(normalizedCallsign);
+  } catch {
+    return { lat: null, lon: null, source: "none" };
+  }
+
+  if (!dxccResult) {
+    return { lat: null, lon: null, source: "none" };
+  }
+
+  const lat = typeof dxccResult.entity.lat === "number" ? Number(dxccResult.entity.lat.toFixed(6)) : null;
+  const lon = typeof dxccResult.entity.long === "number" ? Number(dxccResult.entity.long.toFixed(6)) : null;
+
+  if (lat === null || lon === null) {
+    return { lat: null, lon: null, source: "none" };
+  }
+
+  return {
+    lat,
+    lon,
+    source: "prefix",
+    country: dxccResult.entity.name,
+  };
+}
+
+export function resolveCoordinatesForQso({
+  locator,
+  callsign,
+}: {
+  locator: string | null | undefined;
+  callsign: string | null | undefined;
+}): CoordinateResolution {
+  const normalizedLocator = normalizeLocator(locator);
+  const shouldUsePrefix = !normalizedLocator || normalizedLocator === "JN99";
+
+  if (!shouldUsePrefix) {
+    const locatorCoordinates = maidenheadToLatLon(normalizedLocator);
+
+    if (locatorCoordinates.lat !== null && locatorCoordinates.lon !== null) {
+      return {
+        ...locatorCoordinates,
+        source: "locator",
+      };
+    }
+  }
+
+  return resolveCoordinatesByCallsignPrefix(callsign);
 }
 
 export function averageMapCenter(records: QsoRecord[]) {

@@ -1,4 +1,4 @@
-import { formatBand, maidenheadToLatLon, type QsoRecord } from "@/src/lib/qso-data";
+import { formatBand, resolveCoordinatesForQso, type QsoRecord } from "@/src/lib/qso-data";
 
 type AdifFieldMap = Record<string, string>;
 
@@ -47,8 +47,8 @@ export function parseAdif(text: string): QsoRecord[] {
       fields.my_gridsquare ||
       fields.locator ||
       "";
-    const coordinates = maidenheadToLatLon(locator);
     const callsign = (fields.call || "").toUpperCase();
+    const coordinates = resolveCoordinatesForQso({ locator, callsign });
     const date = normalizeDate(fields.qso_date);
     const timeOn = normalizeTime(fields.time_on);
     const band = formatBand(fields.band);

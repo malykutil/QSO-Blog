@@ -25,6 +25,7 @@ const privateNavigation: NavigationItem[] = [
   { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
   { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
   { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
+  { href: "/qsl", label: "QSL", hint: "Schválení a odesílání lístků", accent: "emerald" },
   { href: "/bezpecnost", label: "Bezpečnost", hint: "Kdo, kdy a jak přistoupil na web", accent: "amber" },
   { href: "/settings", label: "Nastavení", hint: "Domácí lokátor a další volby", accent: "sky" },
 ];

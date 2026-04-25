@@ -10,6 +10,7 @@ import {
   qsoSelectFields,
   type QsoRecord,
 } from "@/src/lib/qso-data";
+import { ensureQslQueueForRecords } from "@/src/lib/qsl-data";
 import { getSupabaseBrowserClient } from "@/src/lib/supabase";
 
 type AdifImportPanelProps = {
@@ -134,8 +135,21 @@ export function AdifImportPanel({ onImported }: AdifImportPanelProps) {
 
     const normalized = (data ?? []).map((row) => normalizeQsoRecord(row));
 
+    let qslStatus = "";
+
+    try {
+      const qslResult = await ensureQslQueueForRecords({
+        supabase,
+        records: normalized,
+        userId: user.id,
+      });
+      qslStatus = ` QSL fronta: přidáno ${qslResult.inserted}, už existovalo ${qslResult.skipped}.`;
+    } catch {
+      qslStatus = " QSL frontu se nepodařilo aktualizovat, zkontroluj SQL schéma qsl.sql.";
+    }
+
     setAdifText("");
-    setStatus(`Hotovo. Do databáze bylo vloženo ${normalized.length} záznamů, přeskočeno duplicit: ${skippedDuplicates}.`);
+    setStatus(`Hotovo. Do databáze bylo vloženo ${normalized.length} záznamů, přeskočeno duplicit: ${skippedDuplicates}.${qslStatus}`);
     window.dispatchEvent(new CustomEvent("qso:changed", { detail: { count: normalized.length } }));
     onImported(normalized);
   };
