@@ -1,9 +1,15 @@
 export const HOME_LOCATOR_STORAGE_KEY = "qso-home-locator";
 export const DEFAULT_HOME_LOCATOR = "JN99AK";
 export const HAMQTH_SETTINGS_STORAGE_KEY = "qso-hamqth-settings";
+export const QRZ_SETTINGS_STORAGE_KEY = "qso-qrz-settings";
 const HOME_LOCATOR_CHANGED_EVENT = "station-settings:changed";
 
 export type HamqthClientSettings = {
+  username: string;
+  password: string;
+};
+
+export type QrzClientSettings = {
   username: string;
   password: string;
 };
@@ -72,6 +78,46 @@ export function clearHamqthSettings() {
   }
 
   window.localStorage.removeItem(HAMQTH_SETTINGS_STORAGE_KEY);
+}
+
+export function readQrzSettings(): QrzClientSettings {
+  if (typeof window === "undefined") {
+    return { username: "", password: "" };
+  }
+
+  try {
+    const rawSettings = window.localStorage.getItem(QRZ_SETTINGS_STORAGE_KEY);
+    const parsed = rawSettings ? (JSON.parse(rawSettings) as Partial<QrzClientSettings>) : null;
+
+    return {
+      username: parsed?.username?.trim() ?? "",
+      password: parsed?.password ?? "",
+    };
+  } catch {
+    return { username: "", password: "" };
+  }
+}
+
+export function saveQrzSettings(settings: QrzClientSettings) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    QRZ_SETTINGS_STORAGE_KEY,
+    JSON.stringify({
+      username: settings.username.trim(),
+      password: settings.password,
+    }),
+  );
+}
+
+export function clearQrzSettings() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(QRZ_SETTINGS_STORAGE_KEY);
 }
 
 export function subscribeHomeLocator(callback: () => void) {

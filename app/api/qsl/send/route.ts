@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 
-import { renderQslCardPng } from "@/src/lib/qsl-card";
 import { isValidEmail, normalizeEmail, normalizeQslQueueItem, qslQueueSelectFields } from "@/src/lib/qsl-data";
 import { getSupabaseRouteClient } from "@/src/lib/supabase-server";
 
@@ -28,7 +25,7 @@ function buildEmailHtml(item: ReturnType<typeof normalizeQslQueueItem>) {
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">
       <h1 style="font-size:22px;margin:0 0 16px">QSL confirmation from OK2MKJ</h1>
       <p>Hello ${item.callsign},</p>
-      <p>thank you for the QSO. The filled QSL card is attached to this e-mail.</p>
+      <p>thank you for the QSO. This is a digital QSL confirmation from my station.</p>
       <table style="border-collapse:collapse;margin:18px 0">
         <tr><td style="padding:6px 14px 6px 0;color:#475569">Callsign</td><td style="padding:6px 0;font-weight:bold">${item.callsign}</td></tr>
         <tr><td style="padding:6px 14px 6px 0;color:#475569">Date</td><td style="padding:6px 0">${item.qsoDate || "--"}</td></tr>
@@ -47,7 +44,7 @@ function buildEmailText(item: ReturnType<typeof normalizeQslQueueItem>) {
     `QSL confirmation from OK2MKJ`,
     ``,
     `Hello ${item.callsign},`,
-    `thank you for the QSO.`,
+    `thank you for the QSO. This is a digital QSL confirmation from my station.`,
     ``,
     `Callsign: ${item.callsign}`,
     `Date: ${item.qsoDate || "--"}`,
@@ -114,22 +111,6 @@ export async function POST(request: NextRequest) {
   }
 
   const resolvedItem = { ...item, contactEmail: email };
-  let qslCardPng: Buffer;
-
-  try {
-    const template = await readFile(path.join(process.cwd(), "public", "qsl-template.png"));
-    qslCardPng = await renderQslCardPng(template, {
-      callsign: item.callsign,
-      qsoDate: item.qsoDate,
-      timeOn: item.timeOn,
-      band: item.band,
-      mode: item.mode,
-      rstSent: item.rstSent,
-      rstRcvd: item.rstRcvd,
-    });
-  } catch {
-    return buildResponse({ error: "QSL šablonu se nepodařilo vyplnit." }, 500);
-  }
 
   const resendResponse = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -144,12 +125,6 @@ export async function POST(request: NextRequest) {
       subject: `QSL OK2MKJ - ${item.callsign} ${item.qsoDate || ""}`.trim(),
       html: buildEmailHtml(resolvedItem),
       text: buildEmailText(resolvedItem),
-      attachments: [
-        {
-          filename: `QSL-OK2MKJ-${item.callsign}-${item.qsoDate || "qso"}.png`,
-          content: qslCardPng.toString("base64"),
-        },
-      ],
     }),
   });
 

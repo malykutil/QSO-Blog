@@ -6,11 +6,7 @@ const QsoMapInner = dynamic(
   () => import("@/app/components/qso-map").then((module) => module.QsoMap),
   {
     ssr: false,
-    loading: () => (
-      <div className="glass-panel rounded-[2.2rem] p-8 text-slate-700">
-        Načítám interaktivní mapu...
-      </div>
-    ),
+    loading: () => <div className="glass-panel rounded-[2.2rem] p-8 text-slate-700">Načítám interaktivní mapu...</div>,
   },
 );
 
@@ -31,6 +27,7 @@ export function QsoMapClient({
     continent?: string;
     distanceRange?: string;
     days?: string[];
+    trafficType?: "all" | "digi" | "phone";
   };
   highlightedQsoKey?: string | null;
 }) {

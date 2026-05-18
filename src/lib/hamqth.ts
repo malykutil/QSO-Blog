@@ -61,6 +61,14 @@ export async function testHamqthConnection(credentials?: Partial<HamqthCredentia
 
 export async function fetchHamqthEmail(callsign: string, credentials?: Partial<HamqthCredentials> | null) {
   const sessionId = await getHamqthSessionId(credentials);
+  return fetchHamqthEmailBySession(callsign, sessionId);
+}
+
+export async function fetchHamqthEmailBySession(callsign: string, sessionId: string) {
+  if (!sessionId) {
+    throw new Error("HamQTH session není dostupná.");
+  }
+
   const searchParams = new URLSearchParams({
     id: sessionId,
     callsign,

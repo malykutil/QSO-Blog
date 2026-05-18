@@ -14,7 +14,7 @@ import {
   type QslQueueItem,
   type QslStatus,
 } from "@/src/lib/qsl-data";
-import { readHamqthSettings } from "@/src/lib/station-settings";
+import { readHamqthSettings, readQrzSettings } from "@/src/lib/station-settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supabase";
 
 function formatDateTime(value: string | null) {
@@ -63,6 +63,7 @@ export function QslManager() {
   const [editingEmails, setEditingEmails] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [bulkLookupRunning, setBulkLookupRunning] = useState(false);
 
   const loadQueue = async () => {
     const supabase = getSupabaseBrowserClient();
@@ -234,6 +235,7 @@ export function QslManager() {
 
   const lookupEmail = async (item: QslQueueItem) => {
     const hamqthSettings = readHamqthSettings();
+    const qrzSettings = readQrzSettings();
 
     setBusyId(item.id);
     setStatus(`Hledám e-mail pro ${item.callsign}...`);
@@ -249,6 +251,13 @@ export function QslManager() {
             ? {
                 username: hamqthSettings.username,
                 password: hamqthSettings.password,
+              }
+            : undefined,
+        qrz:
+          qrzSettings.username && qrzSettings.password
+            ? {
+                username: qrzSettings.username,
+                password: qrzSettings.password,
               }
             : undefined,
       }),
@@ -306,6 +315,62 @@ export function QslManager() {
     await loadQueue();
   };
 
+  const lookupAllEmails = async () => {
+    const hamqthSettings = readHamqthSettings();
+    const qrzSettings = readQrzSettings();
+    const queueIds = items
+      .filter((item) => item.status !== "sent" && !isValidEmail(item.contactEmail))
+      .map((item) => item.id);
+
+    if (!queueIds.length) {
+      setStatus("Všechny QSL záznamy už mají e-mail.");
+      return;
+    }
+
+    setBulkLookupRunning(true);
+    setStatus(`Dohledávám e-maily pro ${queueIds.length} záznamů...`);
+    try {
+      const response = await fetch("/api/qsl/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          queueIds,
+          hamqth:
+            hamqthSettings.username && hamqthSettings.password
+              ? {
+                  username: hamqthSettings.username,
+                  password: hamqthSettings.password,
+                }
+              : undefined,
+          qrz:
+            qrzSettings.username && qrzSettings.password
+              ? {
+                  username: qrzSettings.username,
+                  password: qrzSettings.password,
+                }
+              : undefined,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { found?: number; failed?: number; error?: string }
+        | null;
+
+      if (!response.ok) {
+        setStatus(payload?.error ?? "Hromadné dohledání e-mailů selhalo.");
+        return;
+      }
+
+      await loadQueue();
+      setStatus(`Hotovo. Nalezeno ${payload?.found ?? 0} e-mailů, nenalezeno ${payload?.failed ?? 0}.`);
+    } catch {
+      setStatus("Hromadné dohledání e-mailů se nepodařilo dokončit.");
+    } finally {
+      setBulkLookupRunning(false);
+    }
+  };
+
   if (loading) {
     return <p className="text-slate-600">Načítám QSL frontu...</p>;
   }
@@ -328,14 +393,24 @@ export function QslManager() {
             <p className="text-xs uppercase tracking-[0.35em] text-sky-100/70">QSL lístky</p>
             <h1 className="mt-3 font-display text-5xl leading-tight">Fronta ke schválení</h1>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleSync()}
-            disabled={syncing}
-            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {syncing ? "Synchronizuji..." : "Synchronizovat QSO"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void lookupAllEmails()}
+              disabled={bulkLookupRunning || syncing}
+              className="rounded-full border border-white/40 bg-white/10 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {bulkLookupRunning ? "Dohledávám e-maily..." : "Dohledat všechny e-maily"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={syncing || bulkLookupRunning}
+              className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {syncing ? "Synchronizuji..." : "Synchronizovat QSO"}
+            </button>
+          </div>
         </div>
       </section>
 
