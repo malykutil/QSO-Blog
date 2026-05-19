@@ -707,7 +707,7 @@ export function QsoMap({
         </div>
       </div>
 
-      <div className="rounded-[2.2rem] border border-slate-900/8 bg-slate-950 p-6 text-white lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-5">
+      <div className="h-full rounded-[2.2rem] border border-slate-900/8 bg-slate-950 p-6 text-white lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-5">
         <div className="min-w-0">
         <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Výsledek filtru</p>
         <div className="mt-4 grid grid-cols-[1fr_auto] items-end gap-3">
@@ -770,7 +770,7 @@ export function QsoMap({
         ) : null}
       </div>
 
-      <div className="glass-panel rounded-[2.2rem] p-6">
+      <div className="glass-panel h-full rounded-[2.2rem] p-6">
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Hotové prefixy podle kontinentů</p>
           <div className="flex flex-wrap gap-2">
@@ -855,7 +855,7 @@ export function QsoMap({
   if (layout === "wide") {
     return (
       <section className="space-y-6">
-        <div className="grid gap-6 xl:grid-cols-2">{statsPanels}</div>
+        <div className="grid gap-6 lg:grid-cols-2">{statsPanels}</div>
         {!filters ? filtersPanel : null}
         {mapPanel}
       </section>

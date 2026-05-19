@@ -17,12 +17,14 @@ type NavigationItem = {
 const publicNavigation: NavigationItem[] = [
   { href: "/blog", label: "Blog", hint: "Zápisky ze stanice a provozu" },
   { href: "/mapa", label: "Mapa spojení", hint: "Přehled QSO na mapě" },
+  { href: "/meshtastic", label: "Meshtastic", hint: "Mapa nodů a živá data" },
   { href: "/podminky", label: "Podmínky", hint: "HamSolar + PSK Reporter stav" },
   { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
 ];
 
 const privateNavigation: NavigationItem[] = [
   { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
+  { href: "/meshtastic", label: "Mesh", hint: "Node mapa a packet feed", accent: "sky" },
   { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
   { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
   { href: "/qsl", label: "QSL", hint: "Schválení a odesílání lístků", accent: "emerald" },

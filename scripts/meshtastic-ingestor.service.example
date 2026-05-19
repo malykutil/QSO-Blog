@@ -1,0 +1,17 @@
+[Unit]
+Description=Meshtastic MQTT Ingestor (OK2MKJ)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/meshtastic-ingestor
+EnvironmentFile=/home/pi/meshtastic-ingestor/.env
+ExecStart=/home/pi/meshtastic-ingestor/.venv/bin/python /home/pi/meshtastic-ingestor/meshtastic_ingestor.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
