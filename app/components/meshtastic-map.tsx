@@ -12,6 +12,11 @@ type MeshtasticMapProps = {
   activeOnly: boolean;
 };
 
+function toFallbackNodeLabel(nodeId: string) {
+  const normalized = nodeId.trim().replace(/^!/, "").toUpperCase();
+  return normalized ? `Node ${normalized}` : "Node";
+}
+
 function computeCenter(nodes: MeshtasticNode[]) {
   const withCoordinates = nodes.filter((node) => node.lat !== null && node.lon !== null);
   if (!withCoordinates.length) {
@@ -68,7 +73,7 @@ export function MeshtasticMap({ nodes, activeOnly }: MeshtasticMapProps) {
             >
               <Popup>
                 <div className="space-y-1 text-sm">
-                  <p className="font-semibold">{node.shortName || node.longName || "Neznámý node"}</p>
+                  <p className="font-semibold">{node.shortName || node.longName || toFallbackNodeLabel(node.nodeId)}</p>
                   <p>Naposledy: {formatLastSeen(node.lastSeen)}</p>
                   {node.batteryLevel !== null ? <p>Baterie: {node.batteryLevel}%</p> : null}
                   {node.voltage !== null ? <p>Napětí: {node.voltage.toFixed(2)} V</p> : null}
