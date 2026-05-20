@@ -157,12 +157,26 @@ function formatPacketLine(packet: MeshtasticPacket, nodeLabelsById: Map<string, 
   return `${from} -> ${to} (${port})`;
 }
 
+function extractChannelGroup(channel: string | null) {
+  const value = (channel ?? "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const segments = value.split("/");
+  const last = segments[segments.length - 1] ?? "";
+  if (last.startsWith("!")) {
+    return segments.slice(0, -1).join("/");
+  }
+
+  return value;
+}
+
 export function MeshtasticPanel() {
   const [nodes, setNodes] = useState<MeshtasticNode[]>([]);
   const [packets, setPackets] = useState<MeshtasticPacket[]>([]);
   const [loading, setLoading] = useState(true);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
-  const [channelFilter] = useState(DEFAULT_CHANNEL_FILTER);
   const [status, setStatus] = useState<PanelStatus>(
     isSupabaseConfigured() ? null : { type: "info", message: "Nejdriv nastav Supabase env promenne pro nacitani dat." },
   );
@@ -232,16 +246,49 @@ export function MeshtasticPanel() {
     };
   }, [loadData]);
 
+  const availableChannelGroups = useMemo(() => {
+    const countByGroup = new Map<string, number>();
+
+    for (const packet of packets) {
+      const group = extractChannelGroup(packet.channel);
+      if (!group) {
+        continue;
+      }
+      countByGroup.set(group, (countByGroup.get(group) ?? 0) + 1);
+    }
+
+    return Array.from(countByGroup.entries())
+      .sort((left, right) => right[1] - left[1])
+      .map(([group]) => group);
+  }, [packets]);
+
+  const effectiveChannelFilter = useMemo(() => {
+    if (!packets.length) {
+      return DEFAULT_CHANNEL_FILTER;
+    }
+
+    const normalizedDefault = DEFAULT_CHANNEL_FILTER.toLowerCase();
+    const defaultMatch = availableChannelGroups.find((group) => group.toLowerCase().includes(normalizedDefault));
+    if (defaultMatch) {
+      return defaultMatch;
+    }
+
+    return availableChannelGroups[0] ?? "";
+  }, [availableChannelGroups, packets.length]);
+
   const filteredPackets = useMemo(() => {
-    const normalizedFilter = channelFilter.trim().toLowerCase();
+    const normalizedFilter = effectiveChannelFilter.trim().toLowerCase();
     if (!normalizedFilter) {
       return packets;
     }
-    return packets.filter((packet) => {
-      const channel = (packet.channel ?? "").toLowerCase();
-      return channel.includes(normalizedFilter);
+
+    const matched = packets.filter((packet) => {
+      const channelGroup = extractChannelGroup(packet.channel).toLowerCase();
+      return channelGroup === normalizedFilter;
     });
-  }, [channelFilter, packets]);
+
+    return matched.length ? matched : packets;
+  }, [effectiveChannelFilter, packets]);
 
   const mergedNodes = useMemo(() => {
     const filteredNodeKeys = new Set<string>();
@@ -369,7 +416,9 @@ export function MeshtasticPanel() {
         <div className="relative">
           <p className="text-xs uppercase tracking-[0.35em] text-slate-200/80">Meshtastic</p>
           <h1 className="mt-3 font-display text-5xl leading-tight">Mapa nodu a ziva data</h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-100/90">Data jsou filtrovana na kanal: {channelFilter}</p>
+          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-100/90">
+            Aktivni kanal: {effectiveChannelFilter || "automaticky (vsechny dostupne)"}.
+          </p>
         </div>
       </section>
 
