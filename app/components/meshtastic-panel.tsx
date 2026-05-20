@@ -29,6 +29,8 @@ type NodeSnapshot = {
   payloadType: string | null;
 };
 
+const DEFAULT_CHANNEL_FILTER = "msh/EU_868/2/json/MediumFast";
+
 function normalizeNodeLookupKey(value: unknown) {
   return String(value ?? "")
     .trim()
@@ -160,6 +162,7 @@ export function MeshtasticPanel() {
   const [packets, setPackets] = useState<MeshtasticPacket[]>([]);
   const [loading, setLoading] = useState(true);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [channelFilter] = useState(DEFAULT_CHANNEL_FILTER);
   const [status, setStatus] = useState<PanelStatus>(
     isSupabaseConfigured() ? null : { type: "info", message: "Nejdriv nastav Supabase env promenne pro nacitani dat." },
   );
@@ -229,7 +232,25 @@ export function MeshtasticPanel() {
     };
   }, [loadData]);
 
+  const filteredPackets = useMemo(() => {
+    const normalizedFilter = channelFilter.trim().toLowerCase();
+    if (!normalizedFilter) {
+      return packets;
+    }
+    return packets.filter((packet) => {
+      const channel = (packet.channel ?? "").toLowerCase();
+      return channel.includes(normalizedFilter);
+    });
+  }, [channelFilter, packets]);
+
   const mergedNodes = useMemo(() => {
+    const filteredNodeKeys = new Set<string>();
+    for (const packet of filteredPackets) {
+      for (const snapshot of extractPacketNodeSnapshots(packet)) {
+        filteredNodeKeys.add(snapshot.key);
+      }
+    }
+
     const map = new Map<string, MeshtasticNode>();
 
     for (const node of nodes) {
@@ -237,10 +258,13 @@ export function MeshtasticPanel() {
       if (!key) {
         continue;
       }
+      if (filteredNodeKeys.size && !filteredNodeKeys.has(key)) {
+        continue;
+      }
       map.set(key, { ...node });
     }
 
-    for (const packet of packets) {
+    for (const packet of filteredPackets) {
       const snapshots = extractPacketNodeSnapshots(packet);
       for (const snapshot of snapshots) {
         const existing = map.get(snapshot.key);
@@ -301,7 +325,7 @@ export function MeshtasticPanel() {
       const timeB = new Date(b.lastSeen).getTime();
       return timeB - timeA;
     });
-  }, [nodes, packets]);
+  }, [filteredPackets, nodes]);
 
   const nodeLabelsById = useMemo(() => {
     const map = new Map<string, string>();
@@ -317,7 +341,7 @@ export function MeshtasticPanel() {
       }
     }
 
-    for (const packet of packets) {
+    for (const packet of filteredPackets) {
       for (const snapshot of extractPacketNodeSnapshots(packet)) {
         if (snapshot.label && !map.has(snapshot.key)) {
           map.set(snapshot.key, snapshot.label);
@@ -326,18 +350,18 @@ export function MeshtasticPanel() {
     }
 
     return map;
-  }, [mergedNodes, packets]);
+  }, [filteredPackets, mergedNodes]);
 
   const withLocation = useMemo(() => mergedNodes.filter((node) => node.lat !== null && node.lon !== null).length, [mergedNodes]);
   const uniquePacketSenders = useMemo(() => {
-    return new Set(packets.map((packet) => normalizeNodeLookupKey(packet.fromNode)).filter((key) => key && key !== "ffffffff")).size;
-  }, [packets]);
+    return new Set(filteredPackets.map((packet) => normalizeNodeLookupKey(packet.fromNode)).filter((key) => key && key !== "ffffffff")).size;
+  }, [filteredPackets]);
   const lastPacketAt = useMemo(() => {
-    if (!packets.length) {
+    if (!filteredPackets.length) {
       return null;
     }
-    return packets[0]?.createdAt ?? null;
-  }, [packets]);
+    return filteredPackets[0]?.createdAt ?? null;
+  }, [filteredPackets]);
 
   return (
     <div className="space-y-6">
@@ -345,14 +369,14 @@ export function MeshtasticPanel() {
         <div className="relative">
           <p className="text-xs uppercase tracking-[0.35em] text-slate-200/80">Meshtastic</p>
           <h1 className="mt-3 font-display text-5xl leading-tight">Mapa nodu a ziva data</h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-100/90">Nody, feed i mapa se aktualizuji automaticky kazdych 15 sekund.</p>
+          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-100/90">Data jsou filtrovana na kanal: {channelFilter}</p>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-[1.4rem] border border-slate-900/8 bg-white/85 p-4">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Packety celkem</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-950">{packets.length}</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-950">{filteredPackets.length}</p>
         </div>
         <div className="rounded-[1.4rem] border border-slate-900/8 bg-white/85 p-4">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Unikatni odesilatele</p>
@@ -418,8 +442,8 @@ export function MeshtasticPanel() {
           <h2 className="mt-2 text-3xl font-semibold text-slate-950">Live feed</h2>
 
           <div className="mt-4 max-h-[36rem] space-y-3 overflow-auto pr-1">
-            {packets.length ? (
-              packets.map((packet) => (
+            {filteredPackets.length ? (
+              filteredPackets.map((packet) => (
                 <div key={packet.id} className="rounded-[1rem] border border-slate-900/10 bg-white/90 px-4 py-3">
                   <p className="text-sm font-semibold text-slate-900">{formatPacketLine(packet, nodeLabelsById)}</p>
                   <p className="mt-1 text-xs text-slate-500">{formatLastSeen(packet.createdAt)}</p>
@@ -432,7 +456,7 @@ export function MeshtasticPanel() {
                 </div>
               ))
             ) : (
-              <p className="rounded-[1rem] border border-slate-900/10 bg-white/90 px-4 py-3 text-sm text-slate-600">Zatim neprisly zadne packety.</p>
+              <p className="rounded-[1rem] border border-slate-900/10 bg-white/90 px-4 py-3 text-sm text-slate-600">Na zvolenem kanalu zatim neprisly zadne packety.</p>
             )}
           </div>
         </article>
