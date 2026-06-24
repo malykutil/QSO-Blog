@@ -17,18 +17,17 @@ type NavigationItem = {
 const publicNavigation: NavigationItem[] = [
   { href: "/blog", label: "Blog", hint: "Zápisky ze stanice a provozu" },
   { href: "/mapa", label: "Mapa spojení", hint: "Přehled QSO na mapě" },
-  { href: "/meshtastic", label: "Meshtastic", hint: "Mapa nodů a živá data" },
-  { href: "/podminky", label: "Podmínky", hint: "HamSolar + PSK Reporter stav" },
+  { href: "/qsl-galerie", label: "QSL galerie", hint: "Přehled QSL karet z databáze" },
+  { href: "/podminky", label: "Podmínky", hint: "HamSolar a PSK Reporter" },
   { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
 ];
 
 const privateNavigation: NavigationItem[] = [
   { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
-  { href: "/meshtastic", label: "Mesh", hint: "Node mapa a packet feed", accent: "sky" },
   { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
   { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
-  { href: "/qsl", label: "QSL", hint: "Schválení a odesílání lístků", accent: "emerald" },
-  { href: "/bezpecnost", label: "Bezpečnost", hint: "Kdo, kdy a jak přistoupil na web", accent: "amber" },
+  { href: "/qsl", label: "QSL správa", hint: "Schválení a odesílání lístků", accent: "emerald" },
+  { href: "/bezpecnost", label: "Bezpečnost", hint: "Přístupy a události na webu", accent: "amber" },
   { href: "/settings", label: "Nastavení", hint: "Domácí lokátor a další volby", accent: "sky" },
 ];
 
@@ -187,20 +186,20 @@ export function Sidebar() {
 
             {isLoggedIn
               ? privateNavigation.map((item) => {
-                    const active = isActive(pathname, item.href, currentHash);
-                    const classes = getPrivateItemClasses(item, active);
+                  const active = isActive(pathname, item.href, currentHash);
+                  const classes = getPrivateItemClasses(item, active);
 
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`group block rounded-[1.5rem] border px-4 py-4 transition hover:-translate-y-0.5 ${classes}`}
-                      >
-                        <p className="text-base font-semibold">{item.label}</p>
-                        <p className="mt-1 text-sm opacity-80">{item.hint}</p>
-                      </Link>
-                    );
-                  })
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group block rounded-[1.5rem] border px-4 py-4 transition hover:-translate-y-0.5 ${classes}`}
+                    >
+                      <p className="text-base font-semibold">{item.label}</p>
+                      <p className="mt-1 text-sm opacity-80">{item.hint}</p>
+                    </Link>
+                  );
+                })
               : null}
           </nav>
         </div>
@@ -216,10 +215,7 @@ export function Sidebar() {
               Odhlásit se
             </button>
           ) : (
-            <Link
-              href="/login"
-              className="block rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
+            <Link href="/login" className="block rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800">
               Přihlášení
             </Link>
           )}
