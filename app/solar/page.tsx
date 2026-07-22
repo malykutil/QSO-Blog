@@ -10,6 +10,32 @@ const temperatureLabels = [["object_temperature", "Objekt"], ["battery_temperatu
 
 function value(value: number | null | undefined, unit: string) { return typeof value === "number" ? `${value.toFixed(1)} ${unit}` : "—"; }
 
+function SolarSystemGraphic({ relays }: { relays: SolarRelayState }) {
+  return <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#071b20]/80 p-3 shadow-[0_25px_80px_rgba(5,33,35,0.3)]">
+    <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-amber-300/20 blur-3xl" />
+    <svg viewBox="0 0 760 360" role="img" aria-label="Schéma solárního systému" className="relative h-auto w-full">
+      <defs>
+        <linearGradient id="solar-sun" x1="0" x2="1" y1="0" y2="1"><stop stopColor="#ffe49a" /><stop offset="1" stopColor="#f59e0b" /></linearGradient>
+        <linearGradient id="solar-panel" x1="0" x2="1" y1="0" y2="1"><stop stopColor="#5bd5d2" /><stop offset="1" stopColor="#2563a8" /></linearGradient>
+        <linearGradient id="solar-battery" x1="0" x2="1"><stop stopColor="#d9ffe7" /><stop offset="1" stopColor="#46c98a" /></linearGradient>
+        <filter id="solar-glow"><feGaussianBlur stdDeviation="8" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      <g opacity=".14" stroke="#d8fffb" strokeWidth="1"><path d="M20 60H740M20 120H740M20 180H740M20 240H740M20 300H740" /><path d="M80 20V340M160 20V340M240 20V340M320 20V340M400 20V340M480 20V340M560 20V340M640 20V340" /></g>
+      <circle cx="108" cy="74" r="35" fill="url(#solar-sun)" filter="url(#solar-glow)" /><g stroke="#ffd979" strokeWidth="4" strokeLinecap="round"><path d="M108 18V4M108 144v-14M52 74H38M178 74h-14M68 34 58 24M148 124l-10-10M68 114l-10 10M148 24l-10 10" /></g>
+      <g stroke="#f8c65c" strokeWidth="3" strokeDasharray="8 10" opacity=".8"><path d="M141 90 208 136" /><path d="M137 106 207 166" /></g>
+      <g transform="translate(170 120)" stroke="#bffdfa" strokeWidth="2"><rect width="138" height="92" rx="12" fill="url(#solar-panel)" /><path d="M46 0v92M92 0v92M0 30h138M0 61h138" opacity=".65" /><path d="M30 92 12 124h114L108 92" fill="none" /></g>
+      <g transform="translate(170 232)" stroke="#bffdfa" strokeWidth="2"><rect width="138" height="74" rx="12" fill="url(#solar-panel)" /><path d="M46 0v74M92 0v74M0 25h138M0 50h138" opacity=".65" /><path d="M30 74 12 106h114L108 74" fill="none" /></g>
+      <path d="M310 166H356M310 270H356M356 166v104" stroke="#7df4cf" strokeWidth="4" strokeLinecap="round" />
+      <g transform="translate(356 132)"><rect width="142" height="126" rx="18" fill="#102f35" stroke="#6ef0ce" strokeWidth="2" /><circle cx="28" cy="28" r="7" fill="#5eead4" /><text x="47" y="34" fill="#d8fffb" fontSize="16" fontWeight="700">MPPT</text><text x="24" y="64" fill="#8fc5c3" fontSize="12">REGULÁTOR</text><path d="M24 86h94" stroke="#2f6669" /><path d="M24 101h58" stroke="#2f6669" /><text x="24" y="118" fill="#65e6b8" fontSize="12">ONLINE</text></g>
+      <path d="M498 195h52M498 195 550 90M498 195 550 300" stroke="#7df4cf" strokeWidth="4" strokeLinecap="round" />
+      <g transform="translate(550 48)"><rect width="152" height="84" rx="16" fill="url(#solar-battery)" /><rect x="152" y="25" width="10" height="34" rx="4" fill="#b7f5d2" /><path d="M72 18v48M49 42h46" stroke="#17694e" strokeWidth="8" strokeLinecap="round" /><text x="18" y="76" fill="#17694e" fontSize="12" fontWeight="700">BATERIE</text></g>
+      <g transform="translate(550 158)"><rect width="152" height="74" rx="16" fill="#17303a" stroke="#526f73" /><text x="18" y="28" fill="#d8fffb" fontSize="13" fontWeight="700">RELÉ / ZÁTĚŽ</text>{(["solar1", "solar2", "battery"] as SolarRelayName[]).map((relay, index) => <g key={relay}><circle cx={24 + index * 42} cy="52" r="7" fill={relays[relay] ? "#4ade80" : "#64748b"} /><text x={33 + index * 42} y="56" fill="#9cc6c7" fontSize="10">{index + 1}</text></g>)}</g>
+      <g transform="translate(550 260)"><rect width="152" height="64" rx="16" fill="#17303a" stroke="#526f73" /><text x="18" y="26" fill="#d8fffb" fontSize="13" fontWeight="700">VÝSTUPY</text>{(["bufik", "fan12v", "fan24v"] as SolarRelayName[]).map((relay, index) => <circle key={relay} cx={30 + index * 45} cy="46" r="7" fill={relays[relay] ? "#4ade80" : "#64748b"} />)}</g>
+      <text x="24" y="338" fill="#8bb8b8" fontSize="12" letterSpacing="2">OK2KZB  /  ŽIVÝ SYSTÉM</text>
+    </svg>
+  </div>;
+}
+
 export default function SolarPage() {
   const [telemetry, setTelemetry] = useState<SolarTelemetry | null>(null);
   const [relays, setRelays] = useState<SolarRelayState>(defaultSolarRelayState);
@@ -43,7 +69,7 @@ export default function SolarPage() {
   };
 
   return <AppShell><div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-    <section className="rounded-[2.4rem] bg-[linear-gradient(135deg,_#10251c,_#236342_52%,_#d58a35)] p-8 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)]"><p className="text-xs uppercase tracking-[0.35em] text-emerald-100/80">Solární dohled</p><h1 className="mt-3 font-display text-5xl">Solární přehled</h1><p className="mt-4 text-emerald-50/85">Živá data z Raspberry Pi a ovládání výkonových větví.</p></section>
+    <section className="rounded-[2.4rem] bg-[linear-gradient(135deg,_#10251c,_#236342_52%,_#d58a35)] p-6 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)] md:p-8"><div className="grid items-center gap-7 xl:grid-cols-[.82fr_1.18fr]"><div><p className="text-xs uppercase tracking-[0.35em] text-emerald-100/80">Solární dohled</p><h1 className="mt-3 font-display text-5xl">Solární přehled</h1><p className="mt-4 text-lg leading-8 text-emerald-50/85">Živá data z Raspberry Pi a ovládání výkonových větví.</p><div className="mt-6 flex flex-wrap gap-2 text-xs uppercase tracking-[0.2em] text-emerald-100/75"><span className="rounded-full border border-white/15 bg-white/10 px-3 py-2">2 panely</span><span className="rounded-full border border-white/15 bg-white/10 px-3 py-2">MPPT</span><span className="rounded-full border border-white/15 bg-white/10 px-3 py-2">6 relé</span></div></div><SolarSystemGraphic relays={relays} /></div></section>
     <p className="rounded-[1.2rem] bg-white/75 px-5 py-4 text-sm text-slate-600">{status}</p>
     <section className="grid gap-4 md:grid-cols-3">{currentLabels.map(([key, label]) => <div className="glass-panel rounded-[2rem] p-6" key={key}><p className="text-sm text-slate-500">Proud — {label}</p><p className="mt-3 text-4xl font-semibold text-slate-950">{value(telemetry?.[key], "A")}</p></div>)}</section>
     <section className="glass-panel rounded-[2rem] p-6 md:p-8"><p className="text-xs uppercase tracking-[0.35em] text-slate-500">Teploty</p><h2 className="mt-3 text-3xl font-semibold text-slate-950">Stav systému</h2><div className="mt-6 grid gap-4 md:grid-cols-3">{temperatureLabels.map(([key, label]) => <div className="rounded-[1.5rem] bg-slate-100/80 p-5" key={key}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-semibold text-slate-950">{value(telemetry?.[key], "°C")}</p></div>)}</div></section>
