@@ -43,3 +43,5 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>`. Kromě proudů a teplot může posílat `solar1_voltage`, `solar2_voltage`, `battery_voltage`, `solar1_power`, `solar2_power`, `load_power`, `solar_energy_today_wh` a `load_energy_today_wh`.
 
 Pro načtení požadovaných stavů relé používá RPi `GET /api/solar` se stejnou hlavičkou. Webové ovládání je na `/solar` a je dostupné pouze po přihlášení účtem KZB.
+
+Historii načte web přes `GET /api/solar?range=1h|24h|7d|30d`. Stránka zobrazuje společný graf proudů Solár 1, Solár 2 a baterie včetně záporného směru a samostatný graf teplot objektu, baterie a MPPT.

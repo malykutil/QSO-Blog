@@ -11,13 +11,16 @@ function validRpiRequest(request: NextRequest) {
   return Boolean(token && request.headers.get("authorization") === `Bearer ${token}`);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
 
+  const range = request.nextUrl.searchParams.get("range") ?? "24h";
+  const rangeHours = range === "1h" ? 1 : range === "7d" ? 24 * 7 : range === "30d" ? 24 * 30 : 24;
+
   const [{ data: telemetry }, { data: history }, { data: relays }] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(300),
+    supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(1000),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
   ]);
   const relayState = { ...defaultSolarRelayState };
