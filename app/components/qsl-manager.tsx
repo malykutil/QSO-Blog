@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
-import { normalizeQsoRecord, qsoSelectFields } from "@/src/lib/qso-data";
+import { enrichQsoRecords, normalizeQsoRecord, qsoSelectFields, type EnrichedQsoRecord, type QsoRecord } from "@/src/lib/qso-data";
 import {
   ensureQslQueueForRecords,
   getQslStatusLabel,
@@ -14,8 +15,22 @@ import {
   type QslQueueItem,
   type QslStatus,
 } from "@/src/lib/qsl-data";
-import { readHamqthSettings, readQrzSettings } from "@/src/lib/station-settings";
+import {
+  getHomeLocatorServerSnapshot,
+  readHamqthSettings,
+  readHomeLocator,
+  readQrzSettings,
+  subscribeHomeLocator,
+} from "@/src/lib/station-settings";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supabase";
+
+const QslRouteMap = dynamic(
+  () => import("@/app/components/qsl-route-map").then((module) => module.QslRouteMap),
+  {
+    ssr: false,
+    loading: () => <div className="h-[28rem] animate-pulse rounded-[1.5rem] bg-slate-100" />,
+  },
+);
 
 function formatDateTime(value: string | null) {
   if (!value) {
@@ -52,6 +67,19 @@ function getStatusClasses(status: QslStatus) {
   return "bg-amber-100 text-amber-900";
 }
 
+function formatQsoDate(record: QsoRecord) {
+  if (!record.date) {
+    return "Neznámé datum";
+  }
+
+  const date = new Date(`${record.date}T00:00:00`);
+  const formatted = Number.isNaN(date.getTime())
+    ? record.date
+    : new Intl.DateTimeFormat("cs-CZ", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+
+  return record.timeOn ? `${formatted} v ${record.timeOn.slice(0, 5)} UTC` : formatted;
+}
+
 export function QslManager() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -64,6 +92,13 @@ export function QslManager() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [bulkLookupRunning, setBulkLookupRunning] = useState(false);
+  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [callsignQuery, setCallsignQuery] = useState("");
+  const [qsoMatches, setQsoMatches] = useState<QsoRecord[]>([]);
+  const [qsoSearchLoading, setQsoSearchLoading] = useState(false);
+  const [selectedQso, setSelectedQso] = useState<QsoRecord | null>(null);
+  const [addingQso, setAddingQso] = useState(false);
+  const homeLocator = useSyncExternalStore(subscribeHomeLocator, readHomeLocator, getHomeLocatorServerSnapshot);
 
   const loadQueue = async () => {
     const supabase = getSupabaseBrowserClient();
@@ -109,6 +144,47 @@ export function QslManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const query = callsignQuery.trim().toUpperCase();
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase || !userId || query.length < 2) {
+      setQsoMatches([]);
+      setQsoSearchLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    const timer = window.setTimeout(async () => {
+      setQsoSearchLoading(true);
+      const { data, error } = await supabase
+        .from("qso_logs")
+        .select(qsoSelectFields)
+        .eq("created_by", userId)
+        .ilike("callsign", `%${query}%`)
+        .order("date", { ascending: false })
+        .limit(24);
+
+      if (!mounted) {
+        return;
+      }
+
+      setQsoSearchLoading(false);
+      if (error) {
+        setQsoMatches([]);
+        setStatus(`QSO pro tuto volačku se nepodařilo načíst: ${error.message}`);
+        return;
+      }
+
+      setQsoMatches((data ?? []).map((row) => normalizeQsoRecord(row)));
+    }, 250);
+
+    return () => {
+      mounted = false;
+      window.clearTimeout(timer);
+    };
+  }, [callsignQuery, userId]);
+
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -130,6 +206,37 @@ export function QslManager() {
     }),
     [items],
   );
+
+  const selectedQsoWithDistance = useMemo<EnrichedQsoRecord | null>(() => {
+    if (!selectedQso) {
+      return null;
+    }
+
+    return enrichQsoRecords([selectedQso], homeLocator)[0] ?? null;
+  }, [homeLocator, selectedQso]);
+
+  const addSelectedQso = async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !userId || !selectedQso) {
+      setStatus("Nejdřív vyber konkrétní QSO ze seznamu.");
+      return;
+    }
+
+    setAddingQso(true);
+    try {
+      const result = await ensureQslQueueForRecords({ supabase, records: [selectedQso], userId });
+      await loadQueue();
+      setStatus(
+        result.inserted
+          ? `QSL pro ${selectedQso.callsign} byl přidán do fronty.`
+          : `QSL pro ${selectedQso.callsign} už ve frontě existuje.`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? `QSL se nepodařilo přidat: ${error.message}` : "QSL se nepodařilo přidat.");
+    } finally {
+      setAddingQso(false);
+    }
+  };
 
   const handleSync = async () => {
     const supabase = getSupabaseBrowserClient();
@@ -388,12 +495,19 @@ export function QslManager() {
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <section className="relative overflow-hidden rounded-[2.4rem] border border-slate-900/8 bg-[linear-gradient(135deg,_#0a1420_0%,_#14314c_42%,_#1f5d8f_100%)] p-7 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)] md:p-9">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,_rgba(255,165,96,0.22),_transparent_18%),radial-gradient(circle_at_left_bottom,_rgba(93,183,255,0.16),_transparent_26%)]" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-sky-100/70">QSL lístky</p>
             <h1 className="mt-3 font-display text-5xl leading-tight">Fronta ke schválení</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsAddPanelOpen((current) => !current)}
+              className="rounded-full bg-red-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-red-400"
+            >
+              {isAddPanelOpen ? "Zavřít přidání" : "Přidat QSL"}
+            </button>
             <button
               type="button"
               onClick={() => void lookupAllEmails()}
@@ -413,6 +527,103 @@ export function QslManager() {
           </div>
         </div>
       </section>
+
+      {isAddPanelOpen ? (
+        <section className="glass-panel overflow-hidden rounded-[2rem] p-6 md:p-8">
+          <div className="flex flex-col gap-2 border-b border-slate-900/8 pb-6">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Nová QSL karta</p>
+            <h2 className="font-display text-4xl text-slate-950">Najdi spojení podle volačky</h2>
+            <p className="max-w-2xl text-sm leading-6 text-slate-600">
+              Vyber přesné QSO z databáze. Datum, čas, pásmo i protistanice se doplní automaticky a stejný záznam nelze do fronty přidat dvakrát.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(26rem,1.08fr)]">
+            <div>
+              <label className="text-sm font-semibold text-slate-800" htmlFor="qsl-callsign-search">
+                Volačka protistanice
+              </label>
+              <input
+                id="qsl-callsign-search"
+                value={callsignQuery}
+                onChange={(event) => {
+                  setCallsignQuery(event.target.value.toUpperCase());
+                  setSelectedQso(null);
+                }}
+                placeholder="Např. DL1ABC"
+                autoComplete="off"
+                className="mt-2 w-full rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3.5 text-lg font-semibold uppercase outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+              />
+              <p className="mt-2 text-xs leading-5 text-slate-500">Začni alespoň dvěma znaky. Hledá se jen ve tvé databázi QSO.</p>
+
+              <div className="mt-5 max-h-[29rem] space-y-3 overflow-y-auto pr-1">
+                {qsoSearchLoading ? <p className="rounded-[1rem] bg-slate-100 p-4 text-sm text-slate-600">Hledám spojení…</p> : null}
+                {!qsoSearchLoading && callsignQuery.trim().length >= 2 && !qsoMatches.length ? (
+                  <p className="rounded-[1rem] bg-slate-100 p-4 text-sm leading-6 text-slate-600">Pro zadanou volačku jsme nenašli žádné QSO.</p>
+                ) : null}
+                {qsoMatches.map((record, index) => {
+                  const isSelected = selectedQso?.id !== undefined && record.id === selectedQso.id;
+                  return (
+                    <button
+                      key={record.id !== undefined ? String(record.id) : `${record.callsign}-${record.date}-${record.timeOn}-${index}`}
+                      type="button"
+                      onClick={() => setSelectedQso(record)}
+                      className={`w-full rounded-[1.35rem] border p-4 text-left transition ${
+                        isSelected
+                          ? "border-red-400 bg-red-50 shadow-[0_14px_30px_rgba(185,28,28,0.10)]"
+                          : "border-slate-900/10 bg-white hover:border-sky-300 hover:bg-sky-50/50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-lg font-semibold text-slate-950">{record.callsign}</p>
+                          <p className="mt-1 text-sm text-slate-600">{formatQsoDate(record)}</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {record.band || "--"} / {record.mode || "--"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-500">{record.locator || "Bez lokátoru"}{record.note ? ` · ${record.note}` : ""}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-[1.6rem] border border-slate-900/10 bg-slate-50/80 p-4 md:p-5">
+              {selectedQsoWithDistance ? (
+                <>
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Vybrané spojení</p>
+                      <h3 className="mt-2 font-display text-4xl text-slate-950">{selectedQsoWithDistance.callsign}</h3>
+                      <p className="mt-2 text-sm text-slate-600">{formatQsoDate(selectedQsoWithDistance)} · {selectedQsoWithDistance.band || "--"} / {selectedQsoWithDistance.mode || "--"}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void addSelectedQso()}
+                      disabled={addingQso}
+                      className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {addingQso ? "Přidávám…" : "Přidat do QSL fronty"}
+                    </button>
+                  </div>
+                  <QslRouteMap record={selectedQsoWithDistance} homeLocator={homeLocator} />
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-[1rem] bg-white p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Odkud</p><p className="mt-1 font-semibold text-slate-800">{homeLocator || "Nenastaveno"}</p></div>
+                    <div className="rounded-[1rem] bg-white p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Kam</p><p className="mt-1 font-semibold text-slate-800">{selectedQsoWithDistance.locator || "Bez lokátoru"}</p></div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-full min-h-[28rem] flex-col items-center justify-center rounded-[1.35rem] border border-dashed border-slate-300 bg-white p-8 text-center">
+                  <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Trasa QSO</p>
+                  <p className="mt-4 max-w-sm text-lg leading-7 text-slate-700">Vyber vlevo konkrétní spojení a zobrazí se zde mapa z domácí stanice na protistanici.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-4">
         <div className="glass-panel rounded-[2rem] p-6">
