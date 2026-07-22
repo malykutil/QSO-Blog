@@ -9,6 +9,16 @@ create table if not exists public.solar_telemetry (
   recorded_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.solar_telemetry add column if not exists solar1_voltage numeric;
+alter table public.solar_telemetry add column if not exists solar2_voltage numeric;
+alter table public.solar_telemetry add column if not exists battery_voltage numeric;
+alter table public.solar_telemetry add column if not exists solar1_power numeric;
+alter table public.solar_telemetry add column if not exists solar2_power numeric;
+alter table public.solar_telemetry add column if not exists load_power numeric;
+alter table public.solar_telemetry add column if not exists solar_energy_today_wh numeric;
+alter table public.solar_telemetry add column if not exists load_energy_today_wh numeric;
+alter table public.solar_telemetry add column if not exists battery_soc numeric;
+
 create index if not exists solar_telemetry_recorded_at_idx on public.solar_telemetry (recorded_at desc);
 
 create table if not exists public.solar_relay_states (

@@ -40,6 +40,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 2. Na server přidej `SUPABASE_SERVICE_ROLE_KEY` a náhodný `SOLAR_RPI_TOKEN`.
 3. Volitelně nastav `SOLAR_CONTROL_USERNAME` a `SOLAR_CONTROL_PASSWORD` (výchozí hodnoty jsou `KZB` a `OK2KZB`).
 
-RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>` a JSON poli `solar1_current`, `solar2_current`, `battery_current`, `object_temperature`, `battery_temperature`, `mppt_temperature`.
+RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>`. Kromě proudů a teplot může posílat `solar1_voltage`, `solar2_voltage`, `battery_voltage`, `solar1_power`, `solar2_power`, `load_power`, `solar_energy_today_wh`, `load_energy_today_wh` a `battery_soc`.
 
 Pro načtení požadovaných stavů relé používá RPi `GET /api/solar` se stejnou hlavičkou. Webové ovládání je na `/solar` a je dostupné pouze po přihlášení účtem KZB.

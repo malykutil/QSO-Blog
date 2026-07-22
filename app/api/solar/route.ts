@@ -15,20 +15,21 @@ export async function GET() {
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
 
-  const [{ data: telemetry }, { data: relays }] = await Promise.all([
+  const [{ data: telemetry }, { data: history }, { data: relays }] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(300),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
   ]);
   const relayState = { ...defaultSolarRelayState };
   for (const row of relays ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
-  return NextResponse.json({ telemetry: telemetry ?? null, relays: relayState, canControl: await hasSolarControlSession() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json({ telemetry: telemetry ?? null, history: history ?? [], relays: relayState, canControl: await hasSolarControlSession() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
 export async function POST(request: NextRequest) {
   if (!validRpiRequest(request)) return NextResponse.json({ error: "Neplatný RPi token." }, { status: 401 });
   let payload: Record<string, unknown>;
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatný JSON." }, { status: 400 }); }
-  const allowed = ["solar1_current", "solar2_current", "battery_current", "object_temperature", "battery_temperature", "mppt_temperature"];
+  const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "battery_soc", "object_temperature", "battery_temperature", "mppt_temperature"];
   const values = Object.fromEntries(allowed.map((key) => [key, typeof payload[key] === "number" && Number.isFinite(payload[key]) ? payload[key] : null]));
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
