@@ -34,3 +34,12 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Solární přehled / Raspberry Pi
+
+1. V Supabase spusť `supabase/solar.sql`.
+2. Na server přidej `SUPABASE_SERVICE_ROLE_KEY` a náhodný `SOLAR_RPI_TOKEN`.
+3. Volitelně nastav `SOLAR_CONTROL_USERNAME` a `SOLAR_CONTROL_PASSWORD` (výchozí hodnoty jsou `KZB` a `OK2KZB`).
+
+RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>` a JSON poli `solar1_current`, `solar2_current`, `battery_current`, `object_temperature`, `battery_temperature`, `mppt_temperature`.
+
+Pro načtení požadovaných stavů relé používá RPi `GET /api/solar` se stejnou hlavičkou. Webové ovládání je na `/solar` a je dostupné pouze po přihlášení účtem KZB.

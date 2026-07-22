@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { clearAttempts, getRetryAfterSeconds, registerFailedAttempt } from "@/src/lib/login-rate-limit";
 import { isSupabaseConfigured } from "@/src/lib/supabase";
+import { isSolarControlCredentials, SOLAR_CONTROL_COOKIE, getSolarControlCookieValue } from "@/src/lib/solar-auth";
 
 const LOGIN_ERROR_MESSAGE = "Přihlášení se nezdařilo. Zkontroluj přihlašovací údaje a zkus to znovu.";
 const RATE_LIMIT_MESSAGE = "Příliš mnoho pokusů o přihlášení. Zkus to prosím za chvíli znovu.";
@@ -80,8 +81,16 @@ export async function POST(request: NextRequest) {
     return buildResponse({ error: "Neplatný formát požadavku." }, 400);
   }
 
-  const email = normalizeEmail((payload as { email?: unknown })?.email);
+  const username = typeof (payload as { email?: unknown })?.email === "string" ? (payload as { email: string }).email.trim() : "";
   const password = normalizePassword((payload as { password?: unknown })?.password);
+
+  if (isSolarControlCredentials(username, password)) {
+    const response = buildResponse({ ok: true, solarControl: true }, 200);
+    response.cookies.set(SOLAR_CONTROL_COOKIE, getSolarControlCookieValue(), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 12 });
+    return response;
+  }
+
+  const email = normalizeEmail(username);
 
   if (!isValidEmail(email) || !isValidPassword(password)) {
     return buildResponse({ error: LOGIN_ERROR_MESSAGE }, 400);

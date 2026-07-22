@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 import { isSupabaseConfigured } from "@/src/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 export async function getSupabaseRouteClient() {
   if (!isSupabaseConfigured()) {
@@ -21,5 +22,13 @@ export async function getSupabaseRouteClient() {
         });
       },
     },
+  });
+}
+
+export function getSupabaseAdminClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!isSupabaseConfigured() || !serviceRoleKey) return null;
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 }

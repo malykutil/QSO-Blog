@@ -3,8 +3,12 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { isSupabaseConfigured } from "@/src/lib/supabase";
+import { hasSolarControlSession } from "@/src/lib/solar-auth";
 
 export async function GET() {
+  if (await hasSolarControlSession()) {
+    return NextResponse.json({ authenticated: true, solarControl: true, email: null }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  }
   if (!isSupabaseConfigured()) {
     return NextResponse.json(
       { authenticated: false, reason: "supabase_not_configured" },
@@ -46,4 +50,3 @@ export async function GET() {
     );
   }
 }
-

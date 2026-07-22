@@ -23,6 +23,7 @@ const publicNavigation: NavigationItem[] = [
 ];
 
 const privateNavigation: NavigationItem[] = [
+  { href: "/solar", label: "Solární přehled", hint: "Proudy, teploty a relé", accent: "amber" },
   { href: "/mapa", label: "Mapa", hint: "Veřejná i soukromá vrstva spojení", accent: "sky" },
   { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
   { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
@@ -64,6 +65,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isSolarControl, setIsSolarControl] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(isSupabaseConfigured());
   const [currentHash, setCurrentHash] = useState("");
 
@@ -85,19 +87,21 @@ export function Sidebar() {
           cache: "no-store",
         });
 
-        const payload = (await response.json().catch(() => null)) as { authenticated?: boolean } | null;
+        const payload = (await response.json().catch(() => null)) as { authenticated?: boolean; solarControl?: boolean } | null;
 
         if (!mounted) {
           return;
         }
 
         setIsLoggedIn(Boolean(payload?.authenticated));
+        setIsSolarControl(Boolean(payload?.solarControl));
       } catch {
         if (!mounted) {
           return;
         }
 
         setIsLoggedIn(false);
+        setIsSolarControl(false);
       }
 
       if (!mounted) {
@@ -128,6 +132,7 @@ export function Sidebar() {
   }, [pathname]);
 
   const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     const supabase = getSupabaseBrowserClient();
 
     if (!supabase) {
@@ -185,7 +190,7 @@ export function Sidebar() {
             })}
 
             {isLoggedIn
-              ? privateNavigation.map((item) => {
+              ? privateNavigation.filter((item) => !isSolarControl || item.href === "/solar").map((item) => {
                   const active = isActive(pathname, item.href, currentHash);
                   const classes = getPrivateItemClasses(item, active);
 

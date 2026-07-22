@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 
 import { isSupabaseConfigured } from "@/src/lib/supabase";
+import { getSolarControlCookieValue, SOLAR_CONTROL_COOKIE } from "@/src/lib/solar-auth";
 
-const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
+const privatePaths = ["/dashboard", "/settings", "/bezpecnost", "/solar"];
 const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
 
 function isPrivatePath(pathname: string) {
@@ -116,12 +117,14 @@ async function logAccess(payload: {
 }
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
-  if (!isSupabaseConfigured() || isPrefetchRequest(request)) {
+  if ((isPrefetchRequest(request)) || (!isSupabaseConfigured() && !(request.nextUrl.pathname === "/solar" || request.nextUrl.pathname === "/login"))) {
     return NextResponse.next();
   }
 
   const { pathname, search } = request.nextUrl;
   const needsAuth = isPrivatePath(pathname);
+  const isSolarPath = pathname === "/solar" || pathname.startsWith("/solar/");
+  const hasSolarControl = request.cookies.get(SOLAR_CONTROL_COOKIE)?.value === getSolarControlCookieValue();
   const isLoginPath = pathname === "/login";
   let response = NextResponse.next({ request });
 
@@ -181,7 +184,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     );
   }
 
-  if (needsAuth && !user) {
+  if (needsAuth && !user && !(isSolarPath && hasSolarControl)) {
     const nextPath = `${pathname}${search}`;
     const loginUrl = new URL("/login", request.url);
 
@@ -214,8 +217,8 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     }
   }
 
-  if (isLoginPath && user) {
-    const dashboardUrl = new URL("/dashboard", request.url);
+  if (isLoginPath && (user || hasSolarControl)) {
+    const dashboardUrl = new URL(hasSolarControl && !user ? "/solar" : "/dashboard", request.url);
     const redirect = NextResponse.redirect(dashboardUrl);
     redirect.headers.set("Cache-Control", "no-store, max-age=0");
     return redirect;

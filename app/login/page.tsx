@@ -103,11 +103,11 @@ export default function LoginPage() {
             <div>
               <label className="mb-2 block text-sm text-slate-700">Email</label>
               <input
-                type="email"
-                placeholder="ok2mkj@example.cz"
+                type="text"
+                placeholder="e-mail nebo KZB"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
+                autoComplete="username"
                 maxLength={254}
                 className="w-full rounded-[1.25rem] border border-slate-900/10 bg-white/85 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-500/40"
                 required
