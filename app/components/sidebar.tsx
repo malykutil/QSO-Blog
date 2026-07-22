@@ -20,6 +20,7 @@ const publicNavigation: NavigationItem[] = [
   { href: "/qsl-galerie", label: "QSL galerie", hint: "Přehled QSL karet z databáze" },
   { href: "/podminky", label: "Podmínky", hint: "HamSolar a PSK Reporter" },
   { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
+  { href: "/solar", label: "OK2KZB", hint: "Solární přehled a ovládání relé", accent: "amber" },
 ];
 
 const privateNavigation: NavigationItem[] = [
@@ -190,7 +191,7 @@ export function Sidebar() {
             })}
 
             {isLoggedIn
-              ? privateNavigation.filter((item) => !isSolarControl || item.href === "/solar").map((item) => {
+              ? privateNavigation.filter((item) => item.href !== "/solar" && (!isSolarControl || item.href === "/solar")).map((item) => {
                   const active = isActive(pathname, item.href, currentHash);
                   const classes = getPrivateItemClasses(item, active);
 
