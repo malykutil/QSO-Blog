@@ -13,6 +13,7 @@ function value(value: number | null | undefined, unit: string) { return typeof v
 export default function SolarPage() {
   const [telemetry, setTelemetry] = useState<SolarTelemetry | null>(null);
   const [relays, setRelays] = useState<SolarRelayState>(defaultSolarRelayState);
+  const [canControl, setCanControl] = useState(false);
   const [status, setStatus] = useState("Čekám na data z Raspberry Pi…");
   const [busy, setBusy] = useState<SolarRelayName | null>(null);
 
@@ -22,6 +23,7 @@ export default function SolarPage() {
     const payload = await response.json();
     setTelemetry(payload.telemetry ?? null);
     setRelays({ ...defaultSolarRelayState, ...(payload.relays ?? {}) });
+    setCanControl(Boolean(payload.canControl));
     setStatus(payload.telemetry ? `Poslední měření: ${new Date(payload.telemetry.recorded_at).toLocaleString("cs-CZ")}` : "Čekám na první měření z RPi…");
   };
   useEffect(() => {
@@ -45,6 +47,6 @@ export default function SolarPage() {
     <p className="rounded-[1.2rem] bg-white/75 px-5 py-4 text-sm text-slate-600">{status}</p>
     <section className="grid gap-4 md:grid-cols-3">{currentLabels.map(([key, label]) => <div className="glass-panel rounded-[2rem] p-6" key={key}><p className="text-sm text-slate-500">Proud — {label}</p><p className="mt-3 text-4xl font-semibold text-slate-950">{value(telemetry?.[key], "A")}</p></div>)}</section>
     <section className="glass-panel rounded-[2rem] p-6 md:p-8"><p className="text-xs uppercase tracking-[0.35em] text-slate-500">Teploty</p><h2 className="mt-3 text-3xl font-semibold text-slate-950">Stav systému</h2><div className="mt-6 grid gap-4 md:grid-cols-3">{temperatureLabels.map(([key, label]) => <div className="rounded-[1.5rem] bg-slate-100/80 p-5" key={key}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-semibold text-slate-950">{value(telemetry?.[key], "°C")}</p></div>)}</div></section>
-    <section className="glass-panel rounded-[2rem] p-6 md:p-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-slate-500">Ovládání</p><h2 className="mt-3 text-3xl font-semibold text-slate-950">Relé</h2></div><span className="rounded-full bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">Pouze účet KZB</span></div><div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{(Object.keys(relayLabels) as SolarRelayName[]).map((relay) => <button key={relay} type="button" onClick={() => void toggleRelay(relay)} disabled={busy !== null} className={`rounded-[1.5rem] border p-5 text-left transition hover:-translate-y-0.5 disabled:opacity-60 ${relays[relay] ? "border-emerald-700/30 bg-emerald-100" : "border-slate-900/10 bg-white/80"}`}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-slate-950">{relayLabels[relay]}</span><span className={`h-3 w-3 rounded-full ${relays[relay] ? "bg-emerald-500" : "bg-slate-300"}`} /></div><p className="mt-2 text-sm text-slate-600">{busy === relay ? "Měním…" : relays[relay] ? "Zapnuto" : "Vypnuto"}</p></button>)}</div></section>
+    <section className="glass-panel rounded-[2rem] p-6 md:p-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-slate-500">Ovládání</p><h2 className="mt-3 text-3xl font-semibold text-slate-950">Relé</h2></div><span className="rounded-full bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">{canControl ? "Ovládání povoleno" : "Pouze účet KZB"}</span></div>{!canControl ? <p className="mt-4 rounded-[1.2rem] bg-slate-100 px-4 py-3 text-sm text-slate-600">Stavy relé jsou viditelné. Pro jejich ovládání se přihlas účtem KZB.</p> : null}<div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{(Object.keys(relayLabels) as SolarRelayName[]).map((relay) => <button key={relay} type="button" onClick={() => void toggleRelay(relay)} disabled={!canControl || busy !== null} className={`rounded-[1.5rem] border p-5 text-left transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 ${relays[relay] ? "border-emerald-700/30 bg-emerald-100" : "border-slate-900/10 bg-white/80"}`}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-slate-950">{relayLabels[relay]}</span><span className={`h-3 w-3 rounded-full ${relays[relay] ? "bg-emerald-500" : "bg-slate-300"}`} /></div><p className="mt-2 text-sm text-slate-600">{busy === relay ? "Měním…" : relays[relay] ? "Zapnuto" : "Vypnuto"}</p></button>)}</div></section>
   </div></AppShell>;
 }

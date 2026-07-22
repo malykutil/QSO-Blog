@@ -5,7 +5,7 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { isSupabaseConfigured } from "@/src/lib/supabase";
 import { getSolarControlCookieValue, SOLAR_CONTROL_COOKIE } from "@/src/lib/solar-auth";
 
-const privatePaths = ["/dashboard", "/settings", "/bezpecnost", "/solar"];
+const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
 const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
 
 function isPrivatePath(pathname: string) {

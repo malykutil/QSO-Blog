@@ -11,16 +11,7 @@ function validRpiRequest(request: NextRequest) {
   return Boolean(token && request.headers.get("authorization") === `Bearer ${token}`);
 }
 
-async function isLoggedIn() {
-  if (await hasSolarControlSession()) return true;
-  const supabase = await getSupabaseRouteClient();
-  if (!supabase) return false;
-  const { data } = await supabase.auth.getUser();
-  return Boolean(data.user);
-}
-
-export async function GET(request: NextRequest) {
-  if (!validRpiRequest(request) && !(await isLoggedIn())) return NextResponse.json({ error: "Nepřihlášený přístup." }, { status: 401 });
+export async function GET() {
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
 
@@ -30,7 +21,7 @@ export async function GET(request: NextRequest) {
   ]);
   const relayState = { ...defaultSolarRelayState };
   for (const row of relays ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
-  return NextResponse.json({ telemetry: telemetry ?? null, relays: relayState }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json({ telemetry: telemetry ?? null, relays: relayState, canControl: await hasSolarControlSession() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
 export async function POST(request: NextRequest) {
