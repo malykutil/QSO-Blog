@@ -28,7 +28,7 @@ type QslGalleryCard = {
   imageUrl: string;
   caption: string;
   isPublic: boolean;
-  qso: QsoRecord;
+  qso: QsoRecord | null;
 };
 
 type QslGalleryRow = {
@@ -44,7 +44,7 @@ const qslGallerySelectFields = `id,created_at,image_url,caption,is_public,qso:qs
 
 function normalizeCard(row: QslGalleryRow): QslGalleryCard | null {
   const qsoRow = Array.isArray(row.qso) ? row.qso[0] : row.qso;
-  if (!row.id || !row.image_url || !qsoRow) {
+  if (!row.id || !row.image_url) {
     return null;
   }
 
@@ -54,7 +54,7 @@ function normalizeCard(row: QslGalleryRow): QslGalleryCard | null {
     imageUrl: row.image_url,
     caption: row.caption ?? "",
     isPublic: Boolean(row.is_public),
-    qso: normalizeQsoRecord(qsoRow),
+    qso: qsoRow ? normalizeQsoRecord(qsoRow) : null,
   };
 }
 
@@ -173,7 +173,11 @@ export function QslGallery() {
   }, [callsignQuery, userId]);
 
   const enrichedCards = useMemo(
-    () => cards.map((card) => ({ ...card, qso: enrichQsoRecords([card.qso], homeLocator)[0] })).filter((card) => card.qso),
+    () =>
+      cards.map((card) => ({
+        ...card,
+        qso: card.qso ? enrichQsoRecords([card.qso], homeLocator)[0] ?? null : null,
+      })),
     [cards, homeLocator],
   );
 
@@ -183,7 +187,7 @@ export function QslGallery() {
       return enrichedCards;
     }
     return enrichedCards.filter((card) =>
-      [card.qso.callsign, card.qso.band, card.qso.mode, card.qso.locator, card.caption].join(" ").toLowerCase().includes(query),
+      [card.qso?.callsign, card.qso?.band, card.qso?.mode, card.qso?.locator, card.caption].join(" ").toLowerCase().includes(query),
     );
   }, [enrichedCards, search]);
 
@@ -199,8 +203,8 @@ export function QslGallery() {
 
   const addCard = async () => {
     const supabase = getSupabaseBrowserClient();
-    if (!supabase || !userId || !selectedQso || !imageFile) {
-      setStatus("Vyber spojení a obrázek QSL lístku.");
+    if (!supabase || !userId || !imageFile) {
+      setStatus("Vyber obrázek QSL lístku.");
       return;
     }
 
@@ -211,7 +215,7 @@ export function QslGallery() {
       storagePath = uploaded.path;
       const { error } = await supabase.from("qsl_cards").insert({
         created_by: userId,
-        qso_id: selectedQso.id,
+        qso_id: selectedQso?.id ?? null,
         image_url: uploaded.imageUrl,
         storage_path: uploaded.path,
         caption: caption.trim() || null,
@@ -251,7 +255,7 @@ export function QslGallery() {
           <div>
             <p className="text-xs uppercase tracking-[0.45em] text-sky-100/70">QSL galerie</p>
             <h1 className="mt-4 font-display text-5xl leading-[0.94] md:text-6xl">Přijaté QSL lístky</h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-sky-50/82">Archiv jen pro spojení, ke kterým skutečně dorazil QSL lístek. Každá karta má velký náhled i trasu daného QSO.</p>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-sky-50/82">Archiv přijatých QSL lístků. Kartu můžeš propojit s QSO a mapou, nebo ji uložit samostatně jen jako obrázek.</p>
           </div>
           <div className="flex flex-wrap gap-3">
             {userId ? (
@@ -271,7 +275,8 @@ export function QslGallery() {
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(26rem,1.1fr)]">
             <div>
               <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Přidat přijatý lístek</p>
-              <h2 className="mt-2 font-display text-4xl text-slate-950">Najdi konkrétní QSO</h2>
+              <h2 className="mt-2 font-display text-4xl text-slate-950">Propojit s QSO je nepovinné</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">Volačku vyplň jen pokud chceš k lístku přidat datum, parametry spojení a mapu. Bez ní uložíš samostatný QSL obrázek.</p>
               <label className="mt-6 block text-sm font-semibold text-slate-800" htmlFor="qsl-gallery-callsign">Volačka</label>
               <input id="qsl-gallery-callsign" value={callsignQuery} onChange={(event) => { setCallsignQuery(event.target.value.toUpperCase()); setSelectedQso(null); }} placeholder="Např. DL1ABC" className="mt-2 w-full rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3.5 text-lg font-semibold uppercase outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-100" />
               <div className="mt-4 max-h-[20rem] space-y-3 overflow-y-auto pr-1">
@@ -287,10 +292,10 @@ export function QslGallery() {
               <label className="mt-5 block text-sm font-semibold text-slate-800" htmlFor="qsl-gallery-caption">Popisek (nepovinné)</label>
               <textarea id="qsl-gallery-caption" value={caption} onChange={(event) => setCaption(event.target.value)} rows={3} placeholder="Např. první QSL z Japonska" className="mt-2 w-full resize-y rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none" />
               <label className="mt-4 flex items-center gap-3 text-sm text-slate-700"><input type="checkbox" checked={isPublic} onChange={(event) => setIsPublic(event.target.checked)} /> Zobrazit tento lístek veřejně v galerii</label>
-              <button type="button" onClick={() => void addCard()} disabled={uploading || !selectedQso || !imageFile} className="mt-6 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">{uploading ? "Nahrávám lístek…" : "Uložit QSL lístek"}</button>
+              <button type="button" onClick={() => void addCard()} disabled={uploading || !imageFile} className="mt-6 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">{uploading ? "Nahrávám lístek…" : "Uložit QSL lístek"}</button>
             </div>
             <div className="rounded-[1.6rem] border border-slate-900/10 bg-slate-50 p-4 md:p-5">
-              {selectedQsoWithDistance ? <><p className="text-xs uppercase tracking-[0.3em] text-slate-500">Trasa vybraného QSO</p><h3 className="mt-2 font-display text-4xl text-slate-950">{selectedQsoWithDistance.callsign}</h3><p className="mt-2 text-sm text-slate-600">{formatQso(selectedQsoWithDistance)}</p><div className="mt-5"><QslRouteMap record={selectedQsoWithDistance} homeLocator={homeLocator} /></div></> : <div className="flex min-h-[28rem] items-center justify-center rounded-[1.3rem] border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">Vyber vlevo spojení. Tady hned uvidíš mapu, odkud kam QSO proběhlo.</div>}
+              {selectedQsoWithDistance ? <><p className="text-xs uppercase tracking-[0.3em] text-slate-500">Trasa vybraného QSO</p><h3 className="mt-2 font-display text-4xl text-slate-950">{selectedQsoWithDistance.callsign}</h3><p className="mt-2 text-sm text-slate-600">{formatQso(selectedQsoWithDistance)}</p><div className="mt-5"><QslRouteMap record={selectedQsoWithDistance} homeLocator={homeLocator} /></div></> : <div className="flex min-h-[28rem] items-center justify-center rounded-[1.3rem] border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">QSO není vybrané. Lístek můžeš i tak nahrát, jen nebude mít připojenou mapu a údaje o spojení.</div>}
             </div>
           </div>
         </section>
@@ -303,11 +308,11 @@ export function QslGallery() {
 
       <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="grid gap-4 sm:grid-cols-2">
-          {filteredCards.map((card) => <button key={card.id} type="button" onClick={() => setSelectedCardId(card.id)} className="overflow-hidden rounded-[1.7rem] border border-slate-900/8 bg-white text-left shadow-[0_18px_48px_rgba(15,23,42,0.10)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(15,23,42,0.16)]"><div className="relative aspect-[3/2] bg-slate-100"><QslImage src={card.imageUrl} alt={`QSL lístek ${card.qso.callsign}`} /></div><div className="p-5"><p className="font-display text-3xl text-slate-950">{card.qso.callsign}</p><p className="mt-2 text-sm text-slate-600">{formatQso(card.qso)}</p><p className="mt-2 text-sm text-slate-500">{card.qso.locator || "Bez lokátoru"}</p></div></button>)}
+          {filteredCards.map((card) => <button key={card.id} type="button" onClick={() => setSelectedCardId(card.id)} className="overflow-hidden rounded-[1.7rem] border border-slate-900/8 bg-white text-left shadow-[0_18px_48px_rgba(15,23,42,0.10)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(15,23,42,0.16)]"><div className="relative aspect-[3/2] bg-slate-100"><QslImage src={card.imageUrl} alt={`QSL lístek ${card.qso?.callsign ?? "bez propojeného QSO"}`} /></div><div className="p-5"><p className="font-display text-3xl text-slate-950">{card.qso?.callsign ?? "QSL lístek"}</p><p className="mt-2 text-sm text-slate-600">{card.qso ? formatQso(card.qso) : "Samostatně uložená karta"}</p><p className="mt-2 text-sm text-slate-500">{card.qso?.locator || card.caption || "Bez propojeného QSO"}</p></div></button>)}
           {!filteredCards.length ? <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white/70 p-8 text-center text-slate-600 sm:col-span-2">Zatím tu nejsou žádné veřejné QSL lístky. Po přihlášení můžeš přidat první.</div> : null}
         </div>
         <aside className="xl:sticky xl:top-6 self-start">
-          {selectedCard ? <div className="overflow-hidden rounded-[2.2rem] bg-slate-950 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)]"><div className="p-6"><p className="text-xs uppercase tracking-[0.35em] text-slate-400">Detail QSL</p><h2 className="mt-3 font-display text-5xl">{selectedCard.qso.callsign}</h2><p className="mt-3 text-slate-300">{formatQso(selectedCard.qso)}</p></div><div className="relative aspect-[3/2] border-y border-white/10 bg-slate-900"><QslImage src={selectedCard.imageUrl} alt={`QSL lístek ${selectedCard.qso.callsign}`} /></div><div className="space-y-5 p-6">{selectedCard.caption ? <p className="text-sm leading-6 text-slate-200">{selectedCard.caption}</p> : null}<div className="grid grid-cols-2 gap-3 text-sm"><div className="rounded-[1rem] bg-white/7 p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-400">Lokátor</p><p className="mt-1 font-semibold">{selectedCard.qso.locator || "--"}</p></div><div className="rounded-[1rem] bg-white/7 p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-400">Vzdálenost</p><p className="mt-1 font-semibold">{selectedCard.qso.distanceKm !== null ? `${selectedCard.qso.distanceKm} km` : "--"}</p></div></div><div><p className="mb-3 text-xs uppercase tracking-[0.3em] text-slate-400">Trasa spojení</p><QslRouteMap record={selectedCard.qso} homeLocator={homeLocator} /></div></div></div> : <div className="rounded-[2.2rem] bg-slate-950 p-7 text-white"><p className="text-xl">Vyber QSL lístek a otevře se jeho velký náhled s mapou spojení.</p></div>}
+          {selectedCard ? <div className="overflow-hidden rounded-[2.2rem] bg-slate-950 text-white shadow-[0_24px_80px_rgba(13,27,50,0.16)]"><div className="p-6"><p className="text-xs uppercase tracking-[0.35em] text-slate-400">Detail QSL</p><h2 className="mt-3 font-display text-5xl">{selectedCard.qso?.callsign ?? "QSL lístek"}</h2><p className="mt-3 text-slate-300">{selectedCard.qso ? formatQso(selectedCard.qso) : "Samostatně uložená karta bez propojeného QSO"}</p></div><div className="relative aspect-[3/2] border-y border-white/10 bg-slate-900"><QslImage src={selectedCard.imageUrl} alt={`QSL lístek ${selectedCard.qso?.callsign ?? "bez propojeného QSO"}`} /></div><div className="space-y-5 p-6">{selectedCard.caption ? <p className="text-sm leading-6 text-slate-200">{selectedCard.caption}</p> : null}{selectedCard.qso ? <><div className="grid grid-cols-2 gap-3 text-sm"><div className="rounded-[1rem] bg-white/7 p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-400">Lokátor</p><p className="mt-1 font-semibold">{selectedCard.qso.locator || "--"}</p></div><div className="rounded-[1rem] bg-white/7 p-3"><p className="text-xs uppercase tracking-[0.2em] text-slate-400">Vzdálenost</p><p className="mt-1 font-semibold">{selectedCard.qso.distanceKm !== null ? `${selectedCard.qso.distanceKm} km` : "--"}</p></div></div><div><p className="mb-3 text-xs uppercase tracking-[0.3em] text-slate-400">Trasa spojení</p><QslRouteMap record={selectedCard.qso} homeLocator={homeLocator} /></div></> : <div className="rounded-[1.2rem] bg-white/7 p-4 text-sm leading-6 text-slate-300">Tento lístek není propojený s QSO, proto k němu není mapa trasy.</div>}</div></div> : <div className="rounded-[2.2rem] bg-slate-950 p-7 text-white"><p className="text-xl">Vyber QSL lístek a otevře se jeho velký náhled.</p></div>}
         </aside>
       </section>
     </div>

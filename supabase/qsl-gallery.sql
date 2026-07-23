@@ -5,13 +5,16 @@ create table if not exists public.qsl_cards (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   created_by uuid not null default auth.uid(),
-  qso_id uuid not null references public.qso_logs(id) on delete cascade,
+  qso_id uuid references public.qso_logs(id) on delete cascade,
   image_url text not null,
   storage_path text not null,
   caption text,
   is_public boolean not null default true,
   constraint qsl_cards_one_per_qso unique (created_by, qso_id)
 );
+
+-- Umožní nahrát samostatný QSL lístek i bez přiřazeného QSO.
+alter table public.qsl_cards alter column qso_id drop not null;
 
 create index if not exists qsl_cards_public_created_at_idx on public.qsl_cards (is_public, created_at desc);
 create index if not exists qsl_cards_created_by_idx on public.qsl_cards (created_by);
