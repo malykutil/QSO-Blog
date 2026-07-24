@@ -47,3 +47,5 @@ Pro načtení požadovaných stavů relé používá RPi `GET /api/solar` se ste
 Historii načte web přes `GET /api/solar?range=1h|24h|7d|30d`. Stránka zobrazuje společný graf proudů Solár 1, Solár 2 a baterie včetně záporného směru a samostatný graf teplot objektu, baterie a MPPT.
 
 Předpověď používá `/api/weather` a souřadnice `49.4398092, 18.0245583`. Aktuální výchozí konfigurace je 2×250 Wp, západní orientace, sklon 45° a reálný výkonový koeficient 70 % (orientačně maximálně 350 W dohromady, přibližně 170–175 W na panel). Volitelně lze nastavit `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `SOLAR_TOTAL_WP`, `SOLAR_PANEL_TILT`, `SOLAR_PANEL_AZIMUTH` a `SOLAR_PERFORMANCE_RATIO`. Odhad výroby je orientační a zatím pouze informační; automatické spínání čeká na konkrétní relé pro výhřev baterie a bufík.
+
+Pokud je nastaveno `SOLCAST_API_KEY`, `/api/weather` použije Solcast rooftop PV forecast. Bez klíče zůstává jako záloha Open-Meteo. API klíč patří pouze do serverového prostředí, ne do GitHubu.
