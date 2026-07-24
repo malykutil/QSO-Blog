@@ -6,7 +6,7 @@ const latitude = Number(process.env.WEATHER_LATITUDE ?? "49.4398092");
 const longitude = Number(process.env.WEATHER_LONGITUDE ?? "18.0245583");
 const timezone = process.env.WEATHER_TIMEZONE ?? "Europe/Prague";
 const panelWp = Number(process.env.SOLAR_TOTAL_WP ?? "500");
-const performanceRatio = Number(process.env.SOLAR_PERFORMANCE_RATIO ?? "0.75");
+const performanceRatio = Number(process.env.SOLAR_PERFORMANCE_RATIO ?? "0.70");
 const panelTilt = Number(process.env.SOLAR_PANEL_TILT ?? "45");
 const panelAzimuth = Number(process.env.SOLAR_PANEL_AZIMUTH ?? "90");
 
