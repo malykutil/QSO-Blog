@@ -15,7 +15,7 @@ from smbus2 import SMBus, i2c_msg
 
 API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
-INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "10")))
+INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "60")))
 BMP_BATTERY_ADDRESS = int(os.environ.get("BMP_BATTERY_ADDRESS", "0x76"), 0)
 BMP_OUTSIDE_ADDRESS = int(os.environ.get("BMP_OUTSIDE_ADDRESS", "0x77"), 0)
 PICO_I2C_BUS = int(os.environ.get("PICO_I2C_BUS", "1"))

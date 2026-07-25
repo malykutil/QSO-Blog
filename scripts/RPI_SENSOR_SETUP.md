@@ -40,4 +40,4 @@ sudo systemctl enable --now rpi-telemetry.service
 sudo journalctl -u rpi-telemetry -f
 ```
 
-V `/home/ft-891/qso-blog.env` nastav `SOLAR_API_URL`, `SOLAR_RPI_TOKEN`, `BMP_BATTERY_ADDRESS=0x76`, `BMP_OUTSIDE_ADDRESS=0x77` a `TELEMETRY_INTERVAL_SECONDS=10`.
+V `/home/ft-891/qso-blog.env` nastav `SOLAR_API_URL`, `SOLAR_RPI_TOKEN`, `BMP_BATTERY_ADDRESS=0x76`, `BMP_OUTSIDE_ADDRESS=0x77` a `TELEMETRY_INTERVAL_SECONDS=60`.

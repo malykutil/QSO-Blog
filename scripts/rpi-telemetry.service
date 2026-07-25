@@ -8,6 +8,7 @@ Type=simple
 User=ft-891
 WorkingDirectory=/home/ft-891
 EnvironmentFile=/home/ft-891/qso-blog.env
+Environment=TELEMETRY_INTERVAL_SECONDS=60
 ExecStart=/usr/bin/python3 /home/ft-891/rpi_telemetry.py
 Restart=always
 RestartSec=10
