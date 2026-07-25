@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getSupabaseAdminClient } from "@/src/lib/supabase-server";
+import { getSupabaseAdminClient, getSupabaseRouteClient } from "@/src/lib/supabase-server";
 import { defaultSolarRelayState, solarTelemetryFields, type SolarRelayName } from "@/src/lib/solar-data";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
 
   const [telemetryResult, relaysResult] = await Promise.all([
