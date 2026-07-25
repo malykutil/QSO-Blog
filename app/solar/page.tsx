@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/app/components/app-shell";
+import { InteractiveHistoryChart as HistoryChart } from "@/app/components/history-chart";
 import { defaultSolarRelayState, type SolarRelayName, type SolarRelayState, type SolarTelemetry } from "@/src/lib/solar-data";
 
 const relayLabels: Record<SolarRelayName, string> = { solar1: "Relé Solár 1", solar2: "Relé Solár 2", battery: "Relé baterie", bufik: "Bufík", fan12v: "Ventilátor 12 V", fan24v: "Ventilátor 24 V" };
@@ -17,7 +18,7 @@ function value(value: number | null | undefined, unit: string) { return typeof v
 function weatherEmoji(code: number | null | undefined) { if (code === null || code === undefined) return "·"; if (code === 0) return "☀️"; if (code < 4) return "🌤️"; if (code < 50) return "☁️"; if (code < 70) return "🌧️"; if (code < 80) return "❄️"; return "⛈️"; }
 function shortDate(date: string) { return new Intl.DateTimeFormat("cs-CZ", { weekday: "short", day: "numeric", month: "numeric" }).format(new Date(`${date}T12:00:00`)); }
 
-function HistoryChart({ history, series, title, unit }: { history: SolarTelemetry[]; series: readonly (readonly [NumericTelemetryKey, string, string])[]; title: string; unit: string }) {
+export function LegacyHistoryChart({ history, series, title, unit }: { history: SolarTelemetry[]; series: readonly (readonly [NumericTelemetryKey, string, string])[]; title: string; unit: string }) {
   const width = 900;
   const height = 260;
   const values = series.flatMap(([key]) => history.map((item) => item[key] ?? 0));
