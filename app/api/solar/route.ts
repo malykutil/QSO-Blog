@@ -6,6 +6,9 @@ import { defaultSolarRelayState, solarTelemetryFields } from "@/src/lib/solar-da
 
 export const dynamic = "force-dynamic";
 
+const legacySolarTelemetryFields =
+  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,battery_temperature,mppt_temperature,recorded_at";
+
 function validRpiRequest(request: NextRequest) {
   const token = process.env.SOLAR_RPI_TOKEN;
   return Boolean(token && request.headers.get("authorization") === `Bearer ${token}`);
@@ -28,14 +31,24 @@ export async function GET(request: NextRequest) {
   const range = request.nextUrl.searchParams.get("range") ?? "24h";
   const rangeHours = range === "1h" ? 1 : range === "7d" ? 24 * 7 : range === "30d" ? 24 * 30 : 24;
 
-  const [{ data: telemetry }, { data: history }, { data: relays }] = await Promise.all([
+  const [latestResult, historyResult, relaysResult] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(1000),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
   ]);
+  let telemetry: Record<string, unknown> | null = latestResult.data as Record<string, unknown> | null;
+  let history: Record<string, unknown>[] = (historyResult.data ?? []) as Record<string, unknown>[];
+  if (latestResult.error || historyResult.error) {
+    const [legacyLatest, legacyHistory] = await Promise.all([
+      supabase.from("solar_telemetry").select(legacySolarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("solar_telemetry").select(legacySolarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(1000),
+    ]);
+    telemetry = legacyLatest.data as Record<string, unknown> | null;
+    history = (legacyHistory.data ?? []) as Record<string, unknown>[];
+  }
   const relayState = { ...defaultSolarRelayState };
-  for (const row of relays ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
-  return NextResponse.json({ telemetry: telemetry ?? null, history: history ?? [], relays: relayState, canControl: await canManageSolar() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  for (const row of relaysResult.data ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
+  return NextResponse.json({ telemetry: telemetry ?? null, history, relays: relayState, canControl: await canManageSolar() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
 export async function POST(request: NextRequest) {
@@ -43,7 +56,8 @@ export async function POST(request: NextRequest) {
   let payload: Record<string, unknown>;
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatný JSON." }, { status: 400 }); }
   const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "object_temperature", "object_humidity", "battery_temperature", "outside_temperature", "outside_pressure", "mq9_raw", "mq9_voltage", "mppt_temperature"];
-  const values = Object.fromEntries(allowed.map((key) => [key, typeof payload[key] === "number" && Number.isFinite(payload[key]) ? payload[key] : null]));
+  const values = Object.fromEntries(allowed.filter((key) => typeof payload[key] === "number" && Number.isFinite(payload[key])).map((key) => [key, payload[key]]));
+  if (Object.keys(values).length === 0) return NextResponse.json({ error: "Chybí číselná telemetrie." }, { status: 400 });
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
   const { error } = await supabase.from("solar_telemetry").insert(values);
