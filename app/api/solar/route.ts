@@ -7,7 +7,7 @@ import { defaultSolarRelayState, solarTelemetryFields } from "@/src/lib/solar-da
 export const dynamic = "force-dynamic";
 
 const legacySolarTelemetryFields =
-  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,battery_temperature,mppt_temperature,recorded_at";
+  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
 
 function validRpiRequest(request: NextRequest) {
   const token = process.env.SOLAR_RPI_TOKEN;
