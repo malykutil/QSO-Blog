@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AdifImportPanel } from "@/app/components/adif-import-panel";
 import { AppShell } from "@/app/components/app-shell";
 import { QsoMapClient } from "@/app/components/qso-map-client";
+import { SolarDashboardCard } from "@/app/components/solar-dashboard-card";
 import {
   enrichQsoRecords,
   fallbackQsoRecords,
@@ -296,6 +297,8 @@ export default function DashboardPage() {
             </button>
           </div>
         </section>
+
+        <SolarDashboardCard />
 
         <section className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
           <section id="import" className="scroll-mt-6 glass-panel rounded-[2rem] p-6 md:p-8">

@@ -1,0 +1,40 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type SolarDashboardPayload = { telemetry: { battery_voltage?: number | null; solar1_power?: number | null; solar2_power?: number | null; solar1_current?: number | null; solar2_current?: number | null; recorded_at: string } | null; relays: Record<string, boolean> };
+
+function value(numberValue: number | null | undefined, unit: string) {
+  return typeof numberValue === "number" ? `${numberValue.toFixed(1)} ${unit}` : "—";
+}
+
+export function SolarDashboardCard() {
+  const [payload, setPayload] = useState<SolarDashboardPayload | null>(null);
+  const [error, setError] = useState(false);
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/solar?range=1h", { cache: "no-store" });
+        if (!response.ok) throw new Error("solar");
+        const nextPayload = await response.json() as SolarDashboardPayload;
+        if (!cancelled) { setPayload(nextPayload); setError(false); }
+      } catch { if (!cancelled) setError(true); }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 10000); return () => window.clearInterval(timer); }, []);
+
+  const telemetry = payload?.telemetry;
+  const power = telemetry?.solar1_power !== null && telemetry?.solar1_power !== undefined || telemetry?.solar2_power !== null && telemetry?.solar2_power !== undefined
+    ? (telemetry?.solar1_power ?? 0) + (telemetry?.solar2_power ?? 0)
+    : null;
+  const activeRelays = payload ? Object.values(payload.relays).filter(Boolean).length : 0;
+  const isOnline = telemetry && now !== null ? now - new Date(telemetry.recorded_at).getTime() < 90000 : false;
+
+  return <section className="glass-panel rounded-[2rem] p-6 md:p-8"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.35em] text-slate-500">Provozní přehled</p><h2 className="mt-3 text-3xl font-semibold text-slate-950">Solární systém</h2></div><a href="/solar" className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">Otevřít solární dohled</a></div>{error ? <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">Solární data nejsou momentálně dostupná.</p> : <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-2xl bg-amber-50 p-4"><p className="text-sm text-amber-800/70">Výkon panelů</p><p className="mt-2 text-2xl font-semibold text-amber-950">{value(power, "W")}</p></div><div className="rounded-2xl bg-emerald-50 p-4"><p className="text-sm text-emerald-800/70">Baterie</p><p className="mt-2 text-2xl font-semibold text-emerald-950">{value(telemetry?.battery_voltage, "V")}</p></div><div className="rounded-2xl bg-sky-50 p-4"><p className="text-sm text-sky-800/70">Relé</p><p className="mt-2 text-2xl font-semibold text-sky-950">{activeRelays} aktivních</p></div><div className={`rounded-2xl p-4 ${isOnline ? "bg-emerald-50" : "bg-slate-100"}`}><p className="text-sm text-slate-600">Spojení</p><p className="mt-2 text-2xl font-semibold text-slate-950">{isOnline ? "Online" : "—"}</p></div></div>}</section>;
+}
