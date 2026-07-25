@@ -28,6 +28,10 @@ pio run -e esp32dev -t upload --upload-protocol espota --upload-port qso-esp32-s
 
 After a successful OTA upload the ESP32 restarts automatically. Do not erase the flash or upload the filesystem for a normal firmware update; OTA updates only need the firmware command above.
 
+## Automatic brightness
+
+The onboard light sensor (LDR on GPIO34) controls the backlight on GPIO21. After 15 seconds without a touch, the display dims to a low level. Touching the screen restores the brightness based on the current ambient light.
+
 ## Troubleshooting
 
 - The PC and ESP32 must be on the same network; guest Wi-Fi often blocks device-to-device traffic.

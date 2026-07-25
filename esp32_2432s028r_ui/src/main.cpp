@@ -20,6 +20,9 @@ void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } 
 void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.setTextFont(4); tft.setTextSize(1); }
 
 constexpr int TOUCH_IRQ = 36;
+constexpr int BACKLIGHT_PIN = 21;
+constexpr int LIGHT_SENSOR_PIN = 34;
+constexpr int BACKLIGHT_CHANNEL = 0;
 constexpr uint16_t NAV_Y = 286;
 constexpr uint16_t BG = 0x1082;
 constexpr uint16_t PANEL = 0x18E5;
@@ -36,6 +39,9 @@ bool relays[6] = {false, false, false, false, false, false};
 const char* relayNames[6] = {"solar1", "solar2", "battery", "bufik", "fan12v", "fan24v"};
 uint8_t screen = 0;
 uint32_t lastFetch = 0;
+uint32_t lastInteraction = 0;
+uint32_t lastBrightnessUpdate = 0;
+uint8_t currentBrightness = 255;
 String notice = "Pripojuji WiFi...";
 
 float number(JsonVariantConst value) { return value.isNull() ? NAN : value.as<float>(); }
@@ -44,6 +50,8 @@ String volts(float value) { return isnan(value) ? "--" : String(value, 1) + " V"
 String amps(float value) { return isnan(value) ? "--" : String(value, 2) + " A"; }
 String celsius(float value) { return isnan(value) ? "--" : String(value, 1) + " C"; }
 String measurementTime() { return telemetry.recordedAt.length() >= 16 ? "RPi " + telemetry.recordedAt.substring(11, 16) + " UTC" : "RPi --:--"; }
+void setBacklight(uint8_t value) { currentBrightness = value; ledcWrite(BACKLIGHT_CHANNEL, value); }
+void updateBacklight() { static bool initialized = false; if (!initialized) { ledcSetup(BACKLIGHT_CHANNEL, 5000, 8); ledcAttachPin(BACKLIGHT_PIN, BACKLIGHT_CHANNEL); analogReadResolution(12); initialized = true; } int raw = analogRead(LIGHT_SENSOR_PIN); int ambientBrightness = map(constrain(raw, 400, 3600), 3600, 400, 45, 255); ambientBrightness = constrain(ambientBrightness, 45, 255); bool dimmed = millis() - lastInteraction >= 15000; setBacklight(dimmed ? max(18, ambientBrightness / 5) : ambientBrightness); }
 const char* weatherText(int code) { if (code == 0) return "jasno"; if (code <= 3) return "polojasno"; if (code <= 48) return "oblacno"; if (code <= 67) return "dest"; if (code <= 77) return "snih"; if (code <= 82) return "prehanky"; return "bourky"; }
 
 void header(const char* title, const char* subtitle) {
@@ -117,7 +125,7 @@ void drawControl() {
   tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 220, 1); nav();
 }
 
-void drawScreen() { pinMode(21, OUTPUT); digitalWrite(21, HIGH); if (screen == 0) drawOverview(); else if (screen == 1) drawEnergy(); else if (screen == 2) drawControl(); else drawTemperatures(); }
+void drawScreen() { if (screen == 0) drawOverview(); else if (screen == 1) drawEnergy(); else if (screen == 2) drawControl(); else drawTemperatures(); }
 
 bool apiRequest(const String& method, const String& body, String& response) {
   if (WiFi.status() != WL_CONNECTED) return false;
@@ -151,7 +159,7 @@ void toggleRelay(int index) {
 }
 
   void touchInput() {
-    if (!touch.touched()) return; TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, 239), 0, 239); int y = constrain(map(p.y, 240, 3800, 0, 319), 0, 319);
+    if (!touch.touched()) return; lastInteraction = millis(); updateBacklight(); TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, 239), 0, 239); int y = constrain(map(p.y, 240, 3800, 0, 319), 0, 319);
   if (y >= NAV_Y) { screen = constrain(x / 80, 0, 2); drawScreen(); delay(180); return; }
   if (screen == 0 && y >= 54 && y < 116) { screen = 3; drawScreen(); delay(220); return; }
   if (screen == 3 && y < 54) { screen = 0; drawScreen(); delay(220); return; }
@@ -168,4 +176,4 @@ void setupOTA() {
 }
 
 void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepřipojilo"; drawScreen(); }
-void loop() { ArduinoOTA.handle(); touchInput(); if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } delay(20); }
+void loop() { ArduinoOTA.handle(); touchInput(); if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } delay(20); }
