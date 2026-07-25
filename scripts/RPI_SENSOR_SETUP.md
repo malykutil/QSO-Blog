@@ -26,6 +26,8 @@ Na jednom I²C busu musí mít dva BMP280 rozdílné adresy. U jednoho modulu na
 
 ACS712 (3 kusy) i MQ-9 mají analogový výstup. Raspberry Pi nemá analogový vstup, takže jejich OUT nepřipojuj přímo na GPIO. Přidej ADC, například ADS1115 (I²C) nebo MCP3008 (SPI), a teprve potom doplň mapování kanálů do uploaderu. Web už má připravené proudové kanály Solár 1, Solár 2, Baterie a pole MQ-9; do té doby se zobrazí prázdná hodnota.
 
+Alternativa s Raspberry Pi Pico: nahraj firmware z `pico_adc_i2c/`. Pico načítá ACS712 přes GP26, GP27 a GP28 a poskytuje rámec přes I²C na adrese `0x42`. Propojení Pico–Pi je GP4/SDA → GPIO2/SDA, GP5/SCL → GPIO3/SCL a společná GND. MQ-9 na standardním Pico nemá čtvrtý volný externí ADC kanál; pro něj zůstává potřeba ADS1115/MCP3008. Výstup ACS712 20A je při napájení 5 V přibližně 0–5 V, proto před Pico použij napěťový dělič (např. 10 kΩ nahoře a 20 kΩ dole) a společnou zem.
+
 ## Instalace na RPi
 
 ```bash

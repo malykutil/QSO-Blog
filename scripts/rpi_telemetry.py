@@ -11,12 +11,17 @@ import adafruit_bmp280
 import adafruit_dht
 import adafruit_ina219
 import board
+from smbus2 import SMBus, i2c_msg
 
 API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "10")))
 BMP_BATTERY_ADDRESS = int(os.environ.get("BMP_BATTERY_ADDRESS", "0x76"), 0)
 BMP_OUTSIDE_ADDRESS = int(os.environ.get("BMP_OUTSIDE_ADDRESS", "0x77"), 0)
+PICO_I2C_BUS = int(os.environ.get("PICO_I2C_BUS", "1"))
+PICO_I2C_ADDRESS = int(os.environ.get("PICO_I2C_ADDRESS", "0x42"), 0)
+ACS_ZERO_MV_AT_ADC = float(os.environ.get("ACS_ZERO_MV_AT_ADC", "1667"))
+ACS_SENSITIVITY_MV_PER_A_AT_ADC = float(os.environ.get("ACS_SENSITIVITY_MV_PER_A_AT_ADC", "66.7"))
 
 if not API_URL or not TOKEN:
     raise SystemExit("Nastav SOLAR_API_URL a SOLAR_RPI_TOKEN.")
@@ -26,6 +31,7 @@ dht = adafruit_dht.DHT11(board.D26)
 bmp_battery = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_BATTERY_ADDRESS)
 bmp_outside = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_OUTSIDE_ADDRESS)
 ina219 = adafruit_ina219.INA219(i2c)
+pico_bus = SMBus(PICO_I2C_BUS)
 
 
 def read_number(read):
@@ -44,6 +50,7 @@ def read_sensors():
     outside_pressure = read_number(lambda: bmp_outside.pressure)
     battery_voltage = read_number(lambda: ina219.bus_voltage)
     battery_current = read_number(lambda: ina219.current / 1000.0)
+    pico = read_pico()
     return {
         "object_temperature": object_temperature,
         "object_humidity": object_humidity,
@@ -52,10 +59,29 @@ def read_sensors():
         "outside_pressure": outside_pressure,
         "battery_voltage": battery_voltage,
         "battery_current": battery_current,
-        # MQ-9 and ACS712 are analog devices. They stay null until an ADC is added.
-        "mq9_raw": None,
-        "mq9_voltage": None,
+        "solar1_current": pico["currents"][0],
+        "solar2_current": pico["currents"][1],
+        "battery_current": pico["currents"][2] if pico["currents"][2] is not None else battery_current,
+        "mq9_raw": pico["mq9_raw"],
+        "mq9_voltage": pico["mq9_voltage"],
     }
+
+
+def read_pico():
+    try:
+        write = i2c_msg.write(PICO_I2C_ADDRESS, [0x10])
+        read = i2c_msg.read(PICO_I2C_ADDRESS, 24)
+        pico_bus.i2c_rdwr(write, read)
+        data = bytes(read)
+        if len(data) != 24 or int.from_bytes(data[0:2], "little") != 1:
+            raise RuntimeError("neplatný Pico rámec")
+        acs_mv = [int.from_bytes(data[offset:offset + 2], "little") for offset in (10, 12, 14)]
+        currents = [(mv - ACS_ZERO_MV_AT_ADC) / ACS_SENSITIVITY_MV_PER_A_AT_ADC for mv in acs_mv]
+        mq9_raw = int.from_bytes(data[8:10], "little") or None
+        mq9_mv = int.from_bytes(data[16:18], "little") / 1000 if int.from_bytes(data[16:18], "little") else None
+        return {"currents": currents, "mq9_raw": mq9_raw, "mq9_voltage": mq9_mv}
+    except (OSError, ValueError, RuntimeError):
+        return {"currents": [None, None, None], "mq9_raw": None, "mq9_voltage": None}
 
 
 def send(payload):
@@ -81,3 +107,4 @@ try:
         time.sleep(INTERVAL)
 finally:
     dht.exit()
+    pico_bus.close()
