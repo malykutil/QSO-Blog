@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   const [latestResult, historyResult, relaysResult] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-    latestOnly ? Promise.resolve({ data: [], error: null }) : supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(1000),
+    latestOnly ? Promise.resolve({ data: [], error: null }) : supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: false }).limit(1000),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
   ]);
   let telemetry: Record<string, unknown> | null = latestResult.data as Record<string, unknown> | null;
@@ -42,13 +42,14 @@ export async function GET(request: NextRequest) {
   if (latestResult.error || historyResult.error) {
     const [legacyLatest, legacyHistory] = await Promise.all([
       supabase.from("solar_telemetry").select(legacySolarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("solar_telemetry").select(legacySolarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: true }).limit(1000),
+      supabase.from("solar_telemetry").select(legacySolarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: false }).limit(1000),
     ]);
     telemetry = legacyLatest.data as Record<string, unknown> | null;
     history = (legacyHistory.data ?? []) as Record<string, unknown>[];
   }
   const relayState = { ...defaultSolarRelayState };
   for (const row of relaysResult.data ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
+  history.reverse();
   return NextResponse.json({ telemetry: telemetry ?? null, history, relays: relayState, canControl: await canManageSolar() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
