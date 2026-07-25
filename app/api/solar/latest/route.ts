@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient, getSupabaseRouteClient } from "@/src/lib/supabase-server";
-import { defaultSolarRelayState, solarTelemetryFields, type SolarRelayName } from "@/src/lib/solar-data";
+import { defaultSolarRelayState, type SolarRelayName } from "@/src/lib/solar-data";
 
 export const dynamic = "force-dynamic";
+
+const latestTelemetryFields = "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
 
 export async function GET() {
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
 
   const [telemetryResult, relaysResult] = await Promise.all([
-    supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("solar_telemetry").select(latestTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("solar_relay_states").select("relay,is_on").order("relay"),
   ]);
   if (telemetryResult.error) return NextResponse.json({ error: telemetryResult.error.message }, { status: 500 });
