@@ -174,6 +174,7 @@ void setupOTA() {
   ArduinoOTA.onEnd([]() { notice = "OTA hotovo"; drawScreen(); });
   ArduinoOTA.onError([](ota_error_t error) { notice = "OTA chyba"; drawScreen(); });
   ArduinoOTA.begin();
+  Serial.printf("OTA pripraveno: %s:3232\n", WiFi.localIP().toString().c_str());
 }
 
 void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepřipojilo"; drawScreen(); }
