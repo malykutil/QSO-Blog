@@ -18,6 +18,10 @@ alter table public.solar_telemetry add column if not exists load_power numeric;
 alter table public.solar_telemetry add column if not exists solar_energy_today_wh numeric;
 alter table public.solar_telemetry add column if not exists load_energy_today_wh numeric;
 alter table public.solar_telemetry add column if not exists object_humidity numeric;
+alter table public.solar_telemetry add column if not exists outside_temperature numeric;
+alter table public.solar_telemetry add column if not exists outside_pressure numeric;
+alter table public.solar_telemetry add column if not exists mq9_raw numeric;
+alter table public.solar_telemetry add column if not exists mq9_voltage numeric;
 
 create index if not exists solar_telemetry_recorded_at_idx on public.solar_telemetry (recorded_at desc);
 

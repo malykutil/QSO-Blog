@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   if (!validRpiRequest(request)) return NextResponse.json({ error: "Neplatný RPi token." }, { status: 401 });
   let payload: Record<string, unknown>;
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatný JSON." }, { status: 400 }); }
-  const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "object_temperature", "object_humidity", "battery_temperature", "mppt_temperature"];
+  const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "object_temperature", "object_humidity", "battery_temperature", "outside_temperature", "outside_pressure", "mq9_raw", "mq9_voltage", "mppt_temperature"];
   const values = Object.fromEntries(allowed.map((key) => [key, typeof payload[key] === "number" && Number.isFinite(payload[key]) ? payload[key] : null]));
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
   if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });

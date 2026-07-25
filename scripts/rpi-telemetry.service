@@ -1,0 +1,16 @@
+[Unit]
+Description=QSO Blog Raspberry Pi sensor telemetry
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ft-891
+WorkingDirectory=/home/ft-891
+EnvironmentFile=/home/ft-891/qso-blog.env
+ExecStart=/usr/bin/python3 /home/ft-891/rpi_telemetry.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
