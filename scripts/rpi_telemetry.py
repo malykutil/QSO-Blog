@@ -73,10 +73,17 @@ def read_pico():
         read = i2c_msg.read(PICO_I2C_ADDRESS, 24)
         pico_bus.i2c_rdwr(write, read)
         data = bytes(read)
-        if len(data) != 24 or int.from_bytes(data[0:2], "little") != 1:
+        if len(data) != 24 or int.from_bytes(data[0:2], "little") not in (1, 2):
             raise RuntimeError("neplatný Pico rámec")
         acs_mv = [int.from_bytes(data[offset:offset + 2], "little") for offset in (10, 12, 14)]
-        currents = [(mv - ACS_ZERO_MV_AT_ADC) / ACS_SENSITIVITY_MV_PER_A_AT_ADC for mv in acs_mv]
+        status = data[22]
+        if status & 0x02:
+            zero_mv = 2500.0
+            sensitivity = 100.0
+        else:
+            zero_mv = ACS_ZERO_MV_AT_ADC
+            sensitivity = ACS_SENSITIVITY_MV_PER_A_AT_ADC
+        currents = [(mv - zero_mv) / sensitivity for mv in acs_mv]
         mq9_raw = int.from_bytes(data[8:10], "little") or None
         mq9_mv = int.from_bytes(data[16:18], "little") / 1000 if int.from_bytes(data[16:18], "little") else None
         return {"currents": currents, "mq9_raw": mq9_raw, "mq9_voltage": mq9_mv}
