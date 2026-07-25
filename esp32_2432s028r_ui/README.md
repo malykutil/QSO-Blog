@@ -32,6 +32,16 @@ After a successful OTA upload the ESP32 restarts automatically. Do not erase the
 
 The onboard light sensor (LDR on GPIO34) controls the backlight on GPIO21. After 15 seconds without a touch, the display dims to a low level. Touching the screen restores the brightness based on the current ambient light.
 
+## Reliability and controls
+
+- Watchdog restarts the ESP32 after a blocked task.
+- Last telemetry is cached in NVS and shown during startup/offline operation.
+- The header shows data age, offline state and Wi-Fi RSSI.
+- Tap the top-right header area for diagnostics: IP, RSSI, free heap, uptime and API errors.
+- Critical relays (`battery` and `bufik`) require a 1.2 second long press.
+- Relay state is refreshed from the server after every successful command.
+- OTA shows a progress bar. The display dims after five minutes without touch and uses the onboard LDR; at night it is limited to a low brightness.
+
 ## Troubleshooting
 
 - The PC and ESP32 must be on the same network; guest Wi-Fi often blocks device-to-device traffic.
