@@ -3,6 +3,7 @@
 
 import json
 import os
+from pathlib import Path
 import time
 import urllib.error
 import urllib.request
@@ -19,8 +20,19 @@ if not API_URL or not TOKEN:
 
 sensor = adafruit_dht.DHT11(board.D26)
 
+
+def read_rpi_cpu_temperature():
+    try:
+        return float(Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()) / 1000.0
+    except (OSError, ValueError):
+        return None
+
 def send(temperature: float, humidity: float) -> None:
-    body = json.dumps({"object_temperature": temperature, "object_humidity": humidity}).encode("utf-8")
+    body = json.dumps({
+        "object_temperature": temperature,
+        "object_humidity": humidity,
+        "rpi_cpu_temperature": read_rpi_cpu_temperature(),
+    }).encode("utf-8")
     request = urllib.request.Request(API_URL, data=body, headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "qso-blog-dht11/1.0"}, method="POST")
     with urllib.request.urlopen(request, timeout=15) as response:
         if response.status < 200 or response.status >= 300:
