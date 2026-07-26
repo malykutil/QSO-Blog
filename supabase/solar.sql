@@ -17,6 +17,7 @@ alter table public.solar_telemetry add column if not exists solar2_power numeric
 alter table public.solar_telemetry add column if not exists load_power numeric;
 alter table public.solar_telemetry add column if not exists solar_energy_today_wh numeric;
 alter table public.solar_telemetry add column if not exists load_energy_today_wh numeric;
+alter table public.solar_telemetry add column if not exists rpi_cpu_temperature numeric;
 alter table public.solar_telemetry add column if not exists object_humidity numeric;
 alter table public.solar_telemetry add column if not exists outside_temperature numeric;
 alter table public.solar_telemetry add column if not exists outside_pressure numeric;

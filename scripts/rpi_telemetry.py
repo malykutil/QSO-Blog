@@ -3,6 +3,7 @@
 
 import json
 import os
+from pathlib import Path
 import time
 import urllib.error
 import urllib.request
@@ -84,6 +85,13 @@ def read_number(read):
         return None
 
 
+def read_rpi_cpu_temperature():
+    try:
+        return float(Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()) / 1000.0
+    except (OSError, ValueError):
+        return None
+
+
 def read_sensors():
     object_temperature = read_number(lambda: dht.temperature)
     object_humidity = read_number(lambda: dht.humidity)
@@ -94,6 +102,7 @@ def read_sensors():
     battery_current = read_number(lambda: ina219.current / 1000.0)
     pico = read_pico()
     return {
+        "rpi_cpu_temperature": read_rpi_cpu_temperature(),
         "object_temperature": object_temperature,
         "object_humidity": object_humidity,
         "battery_temperature": battery_temperature,

@@ -7,7 +7,7 @@ import { defaultSolarRelayState, solarTelemetryFields } from "@/src/lib/solar-da
 export const dynamic = "force-dynamic";
 
 const legacySolarTelemetryFields =
-  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
+  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,solar_energy_today_wh,load_energy_today_wh,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
 
 async function fetchTelemetryHistory(supabase: any, fields: string, since: string) {
   const pageSize = 1000;
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   if (!validRpiRequest(request)) return NextResponse.json({ error: "Neplatný RPi token." }, { status: 401 });
   let payload: Record<string, unknown>;
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatný JSON." }, { status: 400 }); }
-  const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "object_temperature", "object_humidity", "battery_temperature", "outside_temperature", "outside_pressure", "mq9_raw", "mq9_voltage", "mppt_temperature"];
+  const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "rpi_cpu_temperature", "object_temperature", "object_humidity", "battery_temperature", "outside_temperature", "outside_pressure", "mq9_raw", "mq9_voltage", "mppt_temperature"];
   const values = Object.fromEntries(allowed.filter((key) => typeof payload[key] === "number" && Number.isFinite(payload[key])).map((key) => [key, payload[key]]));
   if (Object.keys(values).length === 0) return NextResponse.json({ error: "Chybí číselná telemetrie." }, { status: 400 });
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());

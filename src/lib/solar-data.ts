@@ -1,5 +1,5 @@
 export const solarTelemetryFields =
-  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,object_humidity,battery_temperature,outside_temperature,outside_pressure,mq9_raw,mq9_voltage,mppt_temperature,recorded_at";
+  "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,outside_temperature,outside_pressure,mq9_raw,mq9_voltage,mppt_temperature,recorded_at";
 
 export const solarRelayNames = ["solar1", "solar2", "battery", "bufik", "fan12v", "fan24v"] as const;
 export type SolarRelayName = (typeof solarRelayNames)[number];
@@ -16,6 +16,7 @@ export type SolarTelemetry = {
   load_power: number | null;
   solar_energy_today_wh: number | null;
   load_energy_today_wh: number | null;
+  rpi_cpu_temperature: number | null;
   object_temperature: number | null;
   object_humidity: number | null;
   battery_temperature: number | null;
