@@ -32,6 +32,19 @@ Alternativa s Arduino Nano: firmware je v `arduino_nano_adc_i2c/`. ACS712 jsou n
 
 ## Instalace na RPi
 
+Nejjednodušší instalace z naklonovaného repozitáře:
+
+```bash
+cd QSO-Blog/scripts
+chmod +x install-rpi-telemetry.sh
+./install-rpi-telemetry.sh
+nano /home/ft-891/qso-blog.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now rpi-telemetry
+```
+
+Do `qso-blog.env` doplň stejný `SOLAR_RPI_TOKEN`, který je nastavený ve Vercelu. Konfigurační soubor má práva pouze pro vlastníka (`0600`).
+
 ```bash
 sudo apt install -y python3-lgpio
 python3 -m pip install --break-system-packages adafruit-circuitpython-dht adafruit-circuitpython-bmp280 adafruit-circuitpython-ina219 adafruit-blinka
