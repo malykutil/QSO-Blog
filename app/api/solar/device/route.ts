@@ -6,8 +6,9 @@ import { defaultSolarRelayState, solarRelayNames, solarTelemetryFields, type Sol
 export const dynamic = "force-dynamic";
 
 function validDeviceRequest(request: NextRequest) {
-  const token = process.env.SOLAR_DEVICE_TOKEN ?? process.env.SOLAR_RPI_TOKEN;
-  return Boolean(token && request.headers.get("authorization") === `Bearer ${token}`);
+  const authorization = request.headers.get("authorization");
+  const validTokens = [process.env.SOLAR_DEVICE_TOKEN, process.env.SOLAR_RPI_TOKEN].filter(Boolean).map((token) => `Bearer ${token}`);
+  return Boolean(authorization && validTokens.includes(authorization));
 }
 
 export async function GET(request: NextRequest) {
