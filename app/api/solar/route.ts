@@ -9,6 +9,26 @@ export const dynamic = "force-dynamic";
 const legacySolarTelemetryFields =
   "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
 
+async function fetchTelemetryHistory(supabase: any, fields: string, since: string) {
+  const pageSize = 1000;
+  const rows: Record<string, unknown>[] = [];
+
+  for (let offset = 0; offset < 50000; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("solar_telemetry")
+      .select(fields)
+      .gte("recorded_at", since)
+      .order("recorded_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) return { data: rows, error };
+    const page = (data ?? []) as Record<string, unknown>[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return { data: rows, error: null };
+}
+
 function validRpiRequest(request: NextRequest) {
   const token = process.env.SOLAR_RPI_TOKEN;
   return Boolean(token && request.headers.get("authorization") === `Bearer ${token}`);
@@ -31,10 +51,11 @@ export async function GET(request: NextRequest) {
   const range = request.nextUrl.searchParams.get("range") ?? "24h";
   const latestOnly = request.nextUrl.searchParams.get("latest") === "1";
   const rangeHours = range === "1h" ? 1 : range === "7d" ? 24 * 7 : range === "30d" ? 24 * 30 : 24;
+  const since = new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString();
 
   const [latestResult, historyResult, relaysResult] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-    latestOnly ? Promise.resolve({ data: [], error: null }) : supabase.from("solar_telemetry").select(solarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: false }).limit(1000),
+    latestOnly ? Promise.resolve({ data: [], error: null }) : fetchTelemetryHistory(supabase, solarTelemetryFields, since),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
   ]);
   let telemetry: Record<string, unknown> | null = latestResult.data as Record<string, unknown> | null;
@@ -42,14 +63,13 @@ export async function GET(request: NextRequest) {
   if (latestResult.error || historyResult.error) {
     const [legacyLatest, legacyHistory] = await Promise.all([
       supabase.from("solar_telemetry").select(legacySolarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("solar_telemetry").select(legacySolarTelemetryFields).gte("recorded_at", new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString()).order("recorded_at", { ascending: false }).limit(1000),
+      fetchTelemetryHistory(supabase, legacySolarTelemetryFields, since),
     ]);
     telemetry = legacyLatest.data as Record<string, unknown> | null;
     history = (legacyHistory.data ?? []) as Record<string, unknown>[];
   }
   const relayState = { ...defaultSolarRelayState };
   for (const row of relaysResult.data ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
-  history.reverse();
   return NextResponse.json({ telemetry: telemetry ?? null, history, relays: relayState, canControl: await canManageSolar() }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
 
