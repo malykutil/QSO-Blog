@@ -28,9 +28,17 @@ constexpr int TOUCH_IRQ = 36;
 constexpr int BACKLIGHT_PIN = 21;
 constexpr int LIGHT_SENSOR_PIN = 34;
 constexpr int BACKLIGHT_CHANNEL = 0;
-constexpr int SCREEN_WIDTH = 240;
-constexpr int SCREEN_HEIGHT = 320;
-constexpr uint16_t NAV_Y = SCREEN_HEIGHT - 34;
+constexpr int SCREEN_WIDTH = 320;
+constexpr int SCREEN_HEIGHT = 240;
+constexpr int SAFE_EDGE = 5;
+constexpr int STATUS_Y = SAFE_EDGE;
+constexpr int STATUS_H = 25;
+constexpr int CONTENT_Y = 31;
+constexpr int CONTENT_BOTTOM = 195;
+constexpr int NAV_Y = 196;
+constexpr int NAV_H = 39;
+constexpr int MIN_GAP = 4;
+constexpr int BUTTON_MIN_H = 35;
 constexpr uint16_t BG = 0x1082;
 constexpr uint16_t PANEL = 0x18E5;
 constexpr uint16_t TEXT = 0xE7F7;
@@ -39,6 +47,50 @@ constexpr uint16_t GREEN = 0x56D0;
 constexpr uint16_t AMBER = 0xFD40;
 constexpr uint16_t BLUE = 0x65BF;
 constexpr uint16_t RED = 0xF986;
+constexpr uint16_t NAV_BG = 0x1220;
+
+struct UiRect { int x; int y; int w; int h; };
+constexpr UiRect RECT_OVERVIEW_TEMP = {5, 36, 154, 70};
+constexpr UiRect RECT_OVERVIEW_POWER = {165, 36, 150, 70};
+constexpr UiRect RECT_OVERVIEW_WEATHER = {5, 110, 310, 80};
+constexpr UiRect RECT_ENERGY_PANELS = {5, 36, 310, 48};
+constexpr UiRect RECT_ENERGY_BATTERY = {5, 88, 150, 68};
+constexpr UiRect RECT_ENERGY_TODAY = {165, 88, 150, 68};
+constexpr UiRect RECT_ENERGY_TEMP = {5, 160, 310, 30};
+constexpr UiRect RECT_TEMP_0 = {5, 36, 150, 46};
+constexpr UiRect RECT_TEMP_1 = {165, 36, 150, 46};
+constexpr UiRect RECT_TEMP_2 = {5, 86, 150, 46};
+constexpr UiRect RECT_TEMP_3 = {165, 86, 150, 46};
+constexpr UiRect RECT_TEMP_EXTRA = {5, 140, 310, 50};
+constexpr UiRect RECT_DIAG_0 = {5, 36, 150, 74};
+constexpr UiRect RECT_DIAG_1 = {165, 36, 150, 74};
+constexpr UiRect RECT_DIAG_2 = {5, 114, 150, 74};
+constexpr UiRect RECT_DIAG_3 = {165, 114, 150, 74};
+constexpr UiRect RECT_RELAY_0 = {5, 36, 98, 72};
+constexpr UiRect RECT_RELAY_1 = {111, 36, 98, 72};
+constexpr UiRect RECT_RELAY_2 = {217, 36, 98, 72};
+constexpr UiRect RECT_RELAY_3 = {5, 110, 98, 66};
+constexpr UiRect RECT_RELAY_4 = {111, 110, 98, 66};
+constexpr UiRect RECT_RELAY_5 = {217, 110, 98, 66};
+constexpr UiRect RECT_NAV_0 = {5, 196, 99, 39};
+constexpr UiRect RECT_NAV_1 = {110, 196, 100, 39};
+constexpr UiRect RECT_NAV_2 = {216, 196, 99, 39};
+constexpr UiRect RECT_OTA_TITLE = {5, 45, 310, 30};
+constexpr UiRect RECT_OTA_SUBTITLE = {5, 78, 310, 20};
+constexpr UiRect RECT_OTA_BAR = {35, 115, 250, 22};
+constexpr UiRect RECT_OTA_PERCENT = {5, 145, 310, 25};
+constexpr UiRect RECT_OVERVIEW_TEMP_VALUE = {10, 58, 144, 42};
+constexpr UiRect RECT_OVERVIEW_POWER_VALUE = {170, 58, 140, 42};
+constexpr UiRect RECT_ENERGY_S1_VALUE = {10, 52, 145, 28};
+constexpr UiRect RECT_ENERGY_S2_VALUE = {165, 52, 145, 28};
+constexpr UiRect RECT_ENERGY_BATTERY_VALUE = {10, 104, 140, 40};
+constexpr UiRect RECT_ENERGY_TODAY_VALUE = {170, 104, 140, 40};
+constexpr UiRect RECT_EMERGENCY_TITLE = {5, 58, 310, 42};
+constexpr UiRect RECT_EMERGENCY_STATUS = {5, 112, 310, 22};
+constexpr UiRect RECT_EMERGENCY_HELP = {5, 145, 310, 20};
+constexpr UiRect RECT_EMERGENCY_YES = {45, 125, 105, 50};
+constexpr UiRect RECT_EMERGENCY_NO = {170, 125, 105, 50};
+constexpr UiRect RECT_RELAY_NOTICE = {5, 180, 310, 15};
 
 struct Telemetry { float batteryVoltage = NAN, batteryCurrent = NAN, solar1Power = NAN, solar2Power = NAN, solar1Current = NAN, solar2Current = NAN, loadPower = NAN, batteryTemp = NAN, objectTemp = NAN, outsideTemp = NAN, mpptTemp = NAN, objectHumidity = NAN; int solarEnergy = 0; String recordedAt; } telemetry;
 struct Forecast { float min = NAN, max = NAN, estimatedKwh = NAN; int weatherCode = -1; bool valid = false; } forecast;
@@ -90,27 +142,52 @@ void setBacklight(uint8_t value) { currentBrightness = value; ledcWrite(BACKLIGH
 void updateBacklight() { static bool initialized = false; if (!initialized) { ledcSetup(BACKLIGHT_CHANNEL, 5000, 8); ledcAttachPin(BACKLIGHT_PIN, BACKLIGHT_CHANNEL); analogReadResolution(12); initialized = true; } int raw = analogRead(LIGHT_SENSOR_PIN); int ambientBrightness = map(constrain(raw, 400, 3600), 3600, 400, 45, 255); ambientBrightness = constrain(ambientBrightness, 45, 255); bool dimmed = millis() - lastInteraction >= 300000; if (isNight()) ambientBrightness = min(ambientBrightness, 35); setBacklight(dimmed ? max(10, ambientBrightness / 5) : ambientBrightness); }
 const char* weatherText(int code) { if (code == 0) return "jasno"; if (code <= 3) return "polojasno"; if (code <= 48) return "oblacno"; if (code <= 67) return "dest"; if (code <= 77) return "snih"; if (code <= 82) return "prehanky"; return "bourky"; }
 
-void header(const char* title, const char* subtitle) {
-  tft.fillScreen(BG);
-  useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawString(title, 14, 12);
-  tft.setTextColor(MUTED, BG); tft.drawString(subtitle, 14, 34);
-  tft.fillRect(180, 12, 10, 10, WiFi.status() == WL_CONNECTED ? GREEN : RED);
-  tft.drawString(WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : "offline", 194, 14);
-  tft.setTextColor(offlineMode ? AMBER : MUTED, BG); tft.drawString(dataAge(), 14, 45);
+void drawTextFit(String text, int x, int y, int maxWidth, uint16_t color, uint16_t background = BG) {
+  useSmallFont();
+  while (text.length() > 1 && tft.textWidth(text) > maxWidth) text.remove(text.length() - 1);
+  tft.setTextColor(color, background); tft.drawString(text, x, y);
 }
 
-void drawOtaProgress() { tft.fillScreen(BG); useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawString("OTA UPDATE", 14, 18); tft.setTextColor(MUTED, BG); tft.drawString("Neodpojujte napajeni", 14, 44); tft.drawRect(14, 110, 212, 20, TEXT); tft.fillRect(17, 113, (206 * otaPercent) / 100, 14, GREEN); tft.setTextColor(TEXT, BG); tft.drawCentreString(String(otaPercent) + " %", 120, 145, 2); }
+void drawCenteredText(String text, const UiRect& area, uint16_t color, uint16_t background = BG) {
+  useSmallFont();
+  while (text.length() > 1 && tft.textWidth(text) > area.w - MIN_GAP * 2) text.remove(text.length() - 1);
+  tft.setTextColor(color, background); tft.drawString(text, area.x + (area.w - tft.textWidth(text)) / 2, area.y + (area.h - 15) / 2);
+}
 
-void card(int x, int y, int w, int h, uint16_t color = PANEL) { tft.fillRoundRect(x, y, w, h, 10, color); }
-void label(const char* text, int x, int y) { useSmallFont(); tft.setTextColor(MUTED, PANEL); tft.drawString(text, x, y); }
-void valueText(String value, int x, int y, uint16_t color = TEXT) { useLargeFont(); tft.setTextColor(color, PANEL); tft.drawString(value, x, y); useSmallFont(); }
+void drawRightText(String text, const UiRect& area, uint16_t color, uint16_t background = BG) {
+  useSmallFont();
+  while (text.length() > 1 && tft.textWidth(text) > area.w - MIN_GAP * 2) text.remove(text.length() - 1);
+  tft.setTextColor(color, background); tft.drawString(text, area.x + area.w - MIN_GAP - tft.textWidth(text), area.y + (area.h - 15) / 2);
+}
+
+void drawValueUnit(String text, const UiRect& area, uint16_t color, uint16_t background = PANEL) {
+  int split = text.lastIndexOf(' '); String numberPart = split > 0 ? text.substring(0, split) : text; String unitPart = split > 0 ? text.substring(split + 1) : "";
+  useLargeFont(); int numberWidth = tft.textWidth(numberPart); useSmallFont(); int unitWidth = unitPart.length() ? tft.textWidth(unitPart) + MIN_GAP : 0;
+  int totalWidth = numberWidth + unitWidth; int x = area.x + max(MIN_GAP, (area.w - totalWidth) / 2); int y = area.y + (area.h - 32) / 2;
+  useLargeFont(); tft.setTextColor(color, background); tft.drawString(numberPart, x, y); if (unitPart.length()) { useSmallFont(); tft.setTextColor(color, background); tft.drawString(unitPart, x + numberWidth + MIN_GAP, y + 14); }
+}
+
+void header(const char* title, const char* subtitle) {
+  tft.fillScreen(BG); drawTextFit(title, SAFE_EDGE, STATUS_Y + 2, 145, TEXT, BG);
+  drawTextFit(subtitle, 155, STATUS_Y + 4, 120, MUTED, BG); tft.fillCircle(280, STATUS_Y + 11, 5, WiFi.status() == WL_CONNECTED ? GREEN : RED);
+  drawRightText(WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) : "off", {285, STATUS_Y, 30, STATUS_H}, MUTED, BG);
+  tft.drawFastHLine(SAFE_EDGE, STATUS_Y + STATUS_H, SCREEN_WIDTH - SAFE_EDGE * 2, 0x2D5660);
+}
+
+void drawOtaProgress() { tft.fillScreen(BG); drawCenteredText("OTA UPDATE", RECT_OTA_TITLE, TEXT); drawCenteredText("Neodpojujte napajeni", RECT_OTA_SUBTITLE, MUTED); tft.drawRect(RECT_OTA_BAR.x, RECT_OTA_BAR.y, RECT_OTA_BAR.w, RECT_OTA_BAR.h, TEXT); tft.fillRect(RECT_OTA_BAR.x + 3, RECT_OTA_BAR.y + 3, (RECT_OTA_BAR.w - 6) * otaPercent / 100, RECT_OTA_BAR.h - 6, GREEN); drawCenteredText(String(otaPercent) + " %", RECT_OTA_PERCENT, TEXT); }
+
+void card(const UiRect& area, uint16_t color = PANEL) { tft.fillRoundRect(area.x, area.y, area.w, area.h, 8, color); }
+void label(const char* text, const UiRect& area) { drawTextFit(text, area.x + MIN_GAP, area.y + MIN_GAP, area.w - MIN_GAP * 2, MUTED, PANEL); }
+void valueText(String value, const UiRect& area, uint16_t color = TEXT) { drawValueUnit(value, area, color, PANEL); }
 
 void nav() {
-  tft.fillRect(0, NAV_Y, 240, 34, 0x0B1220);
+  tft.fillRect(SAFE_EDGE, NAV_Y, SCREEN_WIDTH - SAFE_EDGE * 2, NAV_H, NAV_BG);
   const char* items[3] = {"PREHLED", "ENERGIE", "OVLADANI"};
-  useSmallFont(); for (int i = 0; i < 3; i++) { tft.setTextColor(i == screen ? GREEN : MUTED, 0x0B1220); tft.drawCentreString(items[i], 40 + i * 80, 299, 1); }
+  const UiRect areas[3] = {RECT_NAV_0, RECT_NAV_1, RECT_NAV_2};
+  for (int i = 0; i < 3; i++) { drawCenteredText(items[i], areas[i], i == screen ? GREEN : MUTED, NAV_BG); }
 }
 
+#if 0
 void drawOverview() {
   header("CHATA / ENERGIE", "prehled stanice");
   card(14, 54, 212, 62); label("TEPLOTA Z WEBU", 26, 68); valueText(celsius(telemetry.objectTemp), 26, 82, BLUE); useSmallFont(); tft.setTextColor(MUTED, PANEL); tft.drawString(measurementTime(), 132, 98);
@@ -173,20 +250,51 @@ void drawControl() {
   useSmallFont(); for (int i = 0; i < 6; i++) { int col = i % 3, row = i / 3; int x = 8 + col * 77, y = 58 + row * 102; uint16_t color = relays[i] ? 0x252E : PANEL; card(x, y, 72, 88, color); tft.setTextColor(relays[i] ? GREEN : TEXT, color); tft.drawCentreString(relayNames[i], x + 36, y + 20, 1); tft.fillCircle(x + 36, y + 53, 13, relays[i] ? GREEN : MUTED); tft.setTextColor(relays[i] ? BG : TEXT, color); tft.drawCentreString(relays[i] ? "ON" : "OFF", x + 36, y + 49, 1); tft.setTextColor(MUTED, color); tft.drawCentreString((i == 2 || i == 3) ? "DRZET" : "KLIK", x + 36, y + 70, 1); }
   tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 270, 1); nav();
 }
+#endif
+
+void drawOverviewScreen() {
+  header("CHATA / ENERGIE", "prehled stanice"); card(RECT_OVERVIEW_TEMP); label("TEPLOTA WEB", RECT_OVERVIEW_TEMP); valueText(celsius(telemetry.objectTemp), RECT_OVERVIEW_TEMP_VALUE, BLUE); drawRightText(measurementTime(), {10, 96, 144, 10}, MUTED, PANEL);
+  card(RECT_OVERVIEW_POWER); label("PROUD PANELU", RECT_OVERVIEW_POWER); valueText(amps(telemetry.solar1Current + telemetry.solar2Current), RECT_OVERVIEW_POWER_VALUE, AMBER);
+  card(RECT_OVERVIEW_WEATHER); label("DNESNI PREDPOVED", RECT_OVERVIEW_WEATHER); if (forecast.valid) { drawTextFit(weatherText(forecast.weatherCode), 12, 136, 100, TEXT, PANEL); drawRightText(String(forecast.max, 0) + "/" + String(forecast.min, 0) + " C", {170, 130, 135, 24}, TEXT, PANEL); drawRightText("vyroba ~" + String(forecast.estimatedKwh, 1) + " kWh", {150, 158, 155, 24}, GREEN, PANEL); } else drawTextFit("predpoved neni dostupna", 12, 146, 290, MUTED, PANEL); nav();
+}
+
+void drawEnergyScreen() {
+  header("ENERGIE", "vykon a teploty"); card(RECT_ENERGY_PANELS); label("PANELY", RECT_ENERGY_PANELS); valueText(watts(telemetry.solar1Power), RECT_ENERGY_S1_VALUE, AMBER); valueText(watts(telemetry.solar2Power), RECT_ENERGY_S2_VALUE, BLUE);
+  card(RECT_ENERGY_BATTERY); label("BATERIE", RECT_ENERGY_BATTERY); valueText(volts(telemetry.batteryVoltage), RECT_ENERGY_BATTERY_VALUE, TEXT); card(RECT_ENERGY_TODAY); label("DNESNI VYROBA", RECT_ENERGY_TODAY); valueText(String(telemetry.solarEnergy) + " Wh", RECT_ENERGY_TODAY_VALUE, GREEN);
+  drawTextFit("TEPLOTA BATERIE", RECT_ENERGY_TEMP.x, RECT_ENERGY_TEMP.y + 7, 150, MUTED); drawRightText(celsius(telemetry.batteryTemp), {165, RECT_ENERGY_TEMP.y, 150, RECT_ENERGY_TEMP.h}, TEXT); nav();
+}
+
+void drawTemperatureScreen() {
+  header("TEPLOTY", "posledni mereni RPi"); const UiRect areas[4] = {RECT_TEMP_0, RECT_TEMP_1, RECT_TEMP_2, RECT_TEMP_3}; const char* labels[4] = {"OBJEKT", "BATERIE", "VENKU", "MPPT"}; String values[4] = {celsius(telemetry.objectTemp), celsius(telemetry.batteryTemp), celsius(telemetry.outsideTemp), celsius(telemetry.mpptTemp)}; uint16_t colors[4] = {BLUE, AMBER, GREEN, RED}; for (int i = 0; i < 4; i++) { card(areas[i]); label(labels[i], areas[i]); drawValueUnit(values[i], {areas[i].x + 4, areas[i].y + 15, areas[i].w - 8, 27}, colors[i], PANEL); }
+  card(RECT_TEMP_EXTRA); drawTextFit("VLHKOST", 12, 150, 80, MUTED, PANEL); drawTextFit(isnan(telemetry.objectHumidity) ? "-- %" : String(telemetry.objectHumidity, 0) + " %", 12, 170, 80, TEXT, PANEL); drawRightText(measurementTime(), {160, 153, 145, 20}, MUTED, PANEL); nav();
+}
+
+void drawDiagnosticsScreen() {
+  header("DIAGNOSTIKA", "stav ESP32 a pripojeni"); const UiRect areas[4] = {RECT_DIAG_0, RECT_DIAG_1, RECT_DIAG_2, RECT_DIAG_3}; for (const UiRect& area : areas) card(area);
+  label("WI-FI", RECT_DIAG_0); drawTextFit(WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : "offline", 10, 62, 140, TEXT, PANEL); drawTextFit(WiFi.localIP().toString(), 10, 86, 140, MUTED, PANEL);
+  label("VYKON", RECT_DIAG_1); drawTextFit(String(cpuLoadPercent) + " %", 170, 62, 140, TEXT, PANEL); drawTextFit(String(getCpuFrequencyMhz()) + " MHz", 170, 86, 140, MUTED, PANEL);
+  label("PAMET", RECT_DIAG_2); drawTextFit(ramText(), 10, 140, 140, TEXT, PANEL); drawTextFit("min " + String(ESP.getMinFreeHeap() / 1024) + " kB", 10, 164, 140, MUTED, PANEL);
+  label("SYSTEM", RECT_DIAG_3); drawTextFit(offlineMode ? "offline" : "online", 170, 140, 140, TEXT, PANEL); drawTextFit(String((millis() - bootMillis) / 3600000) + " h " + String(((millis() - bootMillis) / 60000) % 60) + " min", 170, 164, 140, MUTED, PANEL); nav();
+}
+
+void drawRelayScreen() {
+  header("OVLADANI", "dotykem prepinat vystupy"); const UiRect areas[6] = {RECT_RELAY_0, RECT_RELAY_1, RECT_RELAY_2, RECT_RELAY_3, RECT_RELAY_4, RECT_RELAY_5}; for (int i = 0; i < 6; i++) { uint16_t color = relays[i] ? 0x252E : PANEL; card(areas[i], color); drawCenteredText(relayNames[i], {areas[i].x, areas[i].y + 4, areas[i].w, 20}, relays[i] ? GREEN : TEXT, color); tft.fillCircle(areas[i].x + areas[i].w / 2, areas[i].y + 38, 11, relays[i] ? GREEN : MUTED); drawCenteredText(relays[i] ? "ON" : "OFF", {areas[i].x + 10, areas[i].y + 27, areas[i].w - 20, 22}, relays[i] ? BG : TEXT, relays[i] ? GREEN : MUTED); drawCenteredText((i == 2 || i == 3) ? "DRZET" : "KLIK", {areas[i].x, areas[i].y + 47, areas[i].w, 15}, MUTED, color); } drawCenteredText(notice, RECT_RELAY_NOTICE, MUTED, BG); nav();
+}
 
 void drawEmergencyOverlay() {
   if (emergencyBlink) {
     tft.fillScreen(emergencyBlinkPhase ? RED : BG);
-    useLargeFont(); tft.setTextColor(TEXT, emergencyBlinkPhase ? RED : BG); tft.drawCentreString("STOP", 120, 82, 4);
-    useSmallFont(); tft.drawCentreString("ODPOJENA RELE", 120, 138, 2); tft.drawCentreString("Dlouze podrzte pro obnovu", 120, 174, 1);
+    drawCenteredText("STOP", RECT_EMERGENCY_TITLE, TEXT, emergencyBlinkPhase ? RED : BG);
+    drawCenteredText("ODPOJENA RELE", RECT_EMERGENCY_STATUS, TEXT, emergencyBlinkPhase ? RED : BG); drawCenteredText("Dlouze podrzte pro obnovu", RECT_EMERGENCY_HELP, TEXT, emergencyBlinkPhase ? RED : BG);
   } else if (emergencyPrompt) {
-    tft.fillScreen(BG); useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawCentreString("RELE JSOU ODPOJENA", 120, 48, 2); tft.setTextColor(MUTED, BG); tft.drawCentreString("Chcete znovu pripojit", 120, 82, 1); tft.drawCentreString("panely a baterii?", 120, 98, 1);
-    tft.fillRoundRect(14, 142, 100, 54, 10, GREEN); tft.setTextColor(BG, GREEN); tft.drawCentreString("ANO", 64, 163, 2);
-    tft.fillRoundRect(126, 142, 100, 54, 10, PANEL); tft.setTextColor(TEXT, PANEL); tft.drawCentreString("NE", 176, 163, 2);
+    tft.fillScreen(BG); drawCenteredText("RELE JSOU ODPOJENA", {SAFE_EDGE, 38, SCREEN_WIDTH - SAFE_EDGE * 2, 28}, TEXT); drawCenteredText("Chcete znovu pripojit panely a baterii?", {SAFE_EDGE, 74, SCREEN_WIDTH - SAFE_EDGE * 2, 20}, MUTED);
+    tft.fillRoundRect(RECT_EMERGENCY_YES.x, RECT_EMERGENCY_YES.y, RECT_EMERGENCY_YES.w, RECT_EMERGENCY_YES.h, 8, GREEN); tft.fillRoundRect(RECT_EMERGENCY_NO.x, RECT_EMERGENCY_NO.y, RECT_EMERGENCY_NO.w, RECT_EMERGENCY_NO.h, 8, PANEL); drawCenteredText("ANO", RECT_EMERGENCY_YES, BG, GREEN); drawCenteredText("NE", RECT_EMERGENCY_NO, TEXT, PANEL);
   }
 }
 
-void drawScreen() { if (!hasTelemetry) loadTelemetry(); if (otaInProgress) { drawOtaProgress(); return; } if (screen == 0) drawOverview(); else if (screen == 1) drawEnergy(); else if (screen == 2) drawControl(); else if (screen == 3) drawTemperatures(); else drawDiagnostics(); if (emergencyBlink || emergencyPrompt) drawEmergencyOverlay(); }
+bool debugLayout = false;
+void drawLayoutDebug() { if (!debugLayout) return; const UiRect areas[] = {RECT_OVERVIEW_TEMP, RECT_OVERVIEW_POWER, RECT_OVERVIEW_WEATHER, RECT_ENERGY_PANELS, RECT_ENERGY_BATTERY, RECT_ENERGY_TODAY, RECT_TEMP_0, RECT_TEMP_1, RECT_TEMP_2, RECT_TEMP_3, RECT_DIAG_0, RECT_DIAG_1, RECT_DIAG_2, RECT_DIAG_3, RECT_RELAY_0, RECT_RELAY_1, RECT_RELAY_2, RECT_RELAY_3, RECT_RELAY_4, RECT_RELAY_5, RECT_NAV_0, RECT_NAV_1, RECT_NAV_2}; for (const UiRect& area : areas) tft.drawRect(area.x, area.y, area.w, area.h, RED); }
+void drawScreen() { if (!hasTelemetry) loadTelemetry(); if (otaInProgress) { drawOtaProgress(); return; } if (screen == 0) drawOverviewScreen(); else if (screen == 1) drawEnergyScreen(); else if (screen == 2) drawRelayScreen(); else if (screen == 3) drawTemperatureScreen(); else drawDiagnosticsScreen(); if (emergencyBlink || emergencyPrompt) drawEmergencyOverlay(); drawLayoutDebug(); }
 
 bool apiRequest(const String& method, const String& body, String& response) {
   if (WiFi.status() != WL_CONNECTED) return false;
@@ -249,9 +357,9 @@ void touchInput() {
   if (!touchDown) { touchDown = true; touchHandled = false; touchStarted = millis(); emergencyLongPressHandled = false; }
   uint32_t heldFor = millis() - touchStarted;
   if (emergencyPrompt) {
-    if (!touchHandled && y >= 142 && y < 196) {
+    if (!touchHandled && y >= 125 && y < 175) {
       touchHandled = true; emergencyPrompt = false;
-      if (x < 120) reconnectSafetyRelays(); else { notice = "Rele zustavaji odpojena"; drawScreen(); }
+      if (x >= 45 && x < 150) reconnectSafetyRelays(); else if (x >= 170 && x < 275) { notice = "Rele zustavaji odpojena"; drawScreen(); }
     }
     return;
   }
@@ -262,12 +370,12 @@ void touchInput() {
   if (!emergencyLongPressHandled && heldFor > 2500) {
     emergencyLongPressHandled = true; emergencyBlink = true; emergencyBlinkPhase = true; lastEmergencyBlink = millis(); disconnectSafetyRelays(); return;
   }
-  if (y >= NAV_Y) { if (!touchHandled) { touchHandled = true; screen = constrain(x / 80, 0, 2); drawScreen(); } return; }
-  if (screen == 0 && y >= 54 && y < 116) { if (!touchHandled) { touchHandled = true; screen = 3; drawScreen(); } return; }
-  if (screen == 0 && x >= 170 && y < 54) { if (!touchHandled) { touchHandled = true; screen = 4; drawScreen(); } return; }
-  if ((screen == 3 || screen == 4) && y < 54) { if (!touchHandled) { touchHandled = true; screen = 0; drawScreen(); } return; }
-  if (screen == 2 && y >= 54 && y < NAV_Y) {
-    int col = constrain((x - 8) / 77, 0, 2); int row = y < 160 ? 0 : 1; int index = row * 3 + col; bool critical = index == 2 || index == 3;
+  if (y >= NAV_Y) { if (!touchHandled) { touchHandled = true; screen = x < 110 ? 0 : x < 216 ? 1 : 2; drawScreen(); } return; }
+  if (screen == 0 && y >= RECT_OVERVIEW_TEMP.y && y < RECT_OVERVIEW_TEMP.y + RECT_OVERVIEW_TEMP.h) { if (!touchHandled) { touchHandled = true; screen = 3; drawScreen(); } return; }
+  if (screen == 0 && x >= 275 && y < CONTENT_Y) { if (!touchHandled) { touchHandled = true; screen = 4; drawScreen(); } return; }
+  if ((screen == 3 || screen == 4) && y < CONTENT_Y) { if (!touchHandled) { touchHandled = true; screen = 0; drawScreen(); } return; }
+  if (screen == 2 && y >= RECT_RELAY_0.y && y < RECT_RELAY_3.y + RECT_RELAY_3.h) {
+    int col = x < 109 ? 0 : x < 215 ? 1 : 2; int row = y < RECT_RELAY_3.y ? 0 : 1; int index = row * 3 + col; bool critical = index == 2 || index == 3;
     if (index < 6 && !touchHandled && (!critical || heldFor > 1200)) { touchHandled = true; if (critical) notice = "Dlouhy stisk potvrzen"; toggleRelay(index); }
   }
 }
@@ -286,5 +394,5 @@ void setupOTA() {
   Serial.printf("OTA pripraveno: %s:8266\n", WiFi.localIP().toString().c_str());
 }
 
-void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepripojilo"; drawScreen(); }
+void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(1); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(1); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepripojilo"; drawScreen(); }
 void loop() { uint32_t loopStarted = millis(); esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (emergencyBlink && millis() - lastEmergencyBlink > 400) { lastEmergencyBlink = millis(); emergencyBlinkPhase = !emergencyBlinkPhase; drawEmergencyOverlay(); } if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } updateCpuLoad(loopStarted); delay(20); }
