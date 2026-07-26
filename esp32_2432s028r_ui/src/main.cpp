@@ -21,8 +21,8 @@ Preferences preferences;
 bool fontsReady = false;
 bool fontLoaded = false;
 
-void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.setTextFont(2); tft.setTextSize(1); }
-void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.setTextFont(4); tft.setTextSize(1); }
+void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("NotoSansBold15", LittleFS); fontLoaded = true; }
+void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("NotoSansBold36", LittleFS); fontLoaded = true; }
 
 constexpr int TOUCH_IRQ = 36;
 constexpr int BACKLIGHT_PIN = 21;
@@ -53,6 +53,7 @@ uint32_t lastDataSuccess = 0;
 uint32_t bootMillis = 0;
 uint32_t apiErrors = 0;
 uint32_t lastApiError = 0;
+int lastHttpCode = 0;
 uint32_t cpuWindowStarted = 0;
 uint32_t cpuBusyMillis = 0;
 uint8_t cpuLoadPercent = 0;
@@ -142,7 +143,7 @@ void drawDiagnostics() {
   useSmallFont(); tft.setTextColor(MUTED, PANEL); tft.drawString("WI-FI", 20, 68); tft.drawString("VYKON", 134, 68); tft.drawString("PAMET", 20, 162); tft.drawString("SYSTEM", 134, 162);
   tft.setTextColor(TEXT, PANEL); tft.drawString(WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : "offline", 20, 88); tft.drawString(String(cpuLoadPercent) + " %", 134, 88); tft.drawString(ramText(), 20, 182); tft.drawString(String((millis() - bootMillis) / 3600000) + " h " + String(((millis() - bootMillis) / 60000) % 60) + " min", 134, 182);
   tft.setTextColor(MUTED, PANEL); tft.drawString(WiFi.localIP().toString(), 20, 112); tft.drawString(String(getCpuFrequencyMhz()) + " MHz", 134, 112); tft.drawString("min " + String(ESP.getMinFreeHeap() / 1024) + " kB", 20, 206); tft.drawString(offlineMode ? "offline" : "online", 134, 206);
-  tft.setTextColor(MUTED, BG); tft.drawString("API chyby: " + String(apiErrors), 14, 252); tft.drawRightString("RAM volne " + String(ESP.getFreeHeap() / 1024) + " kB", 226, 252, 1); nav();
+  tft.setTextColor(MUTED, BG); tft.drawString("API chyby: " + String(apiErrors) + " / HTTP " + String(lastHttpCode), 14, 252); tft.drawRightString("RAM volne " + String(ESP.getFreeHeap() / 1024) + " kB", 226, 252, 1); nav();
 }
 
 void drawOverviewLegacy() {
@@ -190,7 +191,7 @@ void drawScreen() { if (!hasTelemetry) loadTelemetry(); if (otaInProgress) { dra
 bool apiRequest(const String& method, const String& body, String& response) {
   if (WiFi.status() != WL_CONNECTED) return false;
   HTTPClient http; String endpoint = method == "GET" ? "/api/solar/latest" : "/api/solar/device"; http.begin(String(SOLAR_API_BASE) + endpoint); if (method != "GET") http.addHeader("Authorization", String("Bearer ") + SOLAR_DEVICE_TOKEN); http.addHeader("Content-Type", "application/json");
-  int code = method == "GET" ? http.GET() : http.POST(body); response = http.getString(); http.end(); return code >= 200 && code < 300;
+  int code = method == "GET" ? http.GET() : http.POST(body); lastHttpCode = code; response = http.getString(); http.end(); return code >= 200 && code < 300;
 }
 
 void fetchData() {
@@ -239,7 +240,7 @@ void reconnectSafetyRelays() {
 
 void toggleRelay(int index) {
   String body = String("{\"relay\":\"") + relayNames[index] + "\",\"isOn\":" + (!relays[index] ? "true" : "false") + "}"; String response;
-  if (apiRequest("POST", body, response)) { notice = "Overuji stav relé"; fetchData(); } else { notice = "Ovládání selhalo"; drawScreen(); }
+  if (apiRequest("POST", body, response)) { notice = "Overuji stav relé"; fetchData(); } else { notice = "API chyba HTTP " + String(lastHttpCode); drawScreen(); }
 }
 
 void touchInput() {
