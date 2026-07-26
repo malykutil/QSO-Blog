@@ -20,9 +20,11 @@ XPT2046_Touchscreen touch(33, 36);
 Preferences preferences;
 bool fontsReady = false;
 bool fontLoaded = false;
+enum class FontMode : uint8_t { None, Small, Large };
+FontMode currentFontMode = FontMode::None;
 
-void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("CzechSans15", LittleFS); fontLoaded = true; }
-void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("CzechSans32", LittleFS); fontLoaded = true; }
+void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } if (currentFontMode != FontMode::Small) { tft.setTextFont(2); tft.setTextSize(1); currentFontMode = FontMode::Small; } }
+void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } if (currentFontMode != FontMode::Large) { tft.setTextFont(4); tft.setTextSize(1); currentFontMode = FontMode::Large; } }
 
 constexpr int TOUCH_IRQ = 36;
 constexpr int BACKLIGHT_PIN = 21;
