@@ -200,13 +200,13 @@ void touchInput() {
   if (!touch.touched()) { touchDown = false; touchedRelay = -1; return; }
   lastInteraction = millis(); updateBacklight(); TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, 239), 0, 239); int y = constrain(map(p.y, 240, 3800, 0, 319), 0, 319);
   if (!touchDown) { touchDown = true; touchHandled = false; touchStarted = millis(); }
-  if (y >= NAV_Y) { screen = constrain(x / 80, 0, 2); drawScreen(); delay(180); return; }
-  if (screen == 0 && y >= 54 && y < 116) { screen = 3; drawScreen(); delay(220); return; }
-  if (screen == 0 && x >= 170 && y < 54) { screen = 4; drawScreen(); delay(220); return; }
-  if ((screen == 3 || screen == 4) && y < 54) { screen = 0; drawScreen(); delay(220); return; }
+  if (y >= NAV_Y) { if (!touchHandled) { touchHandled = true; screen = constrain(x / 80, 0, 2); drawScreen(); } return; }
+  if (screen == 0 && y >= 54 && y < 116) { if (!touchHandled) { touchHandled = true; screen = 3; drawScreen(); } return; }
+  if (screen == 0 && x >= 170 && y < 54) { if (!touchHandled) { touchHandled = true; screen = 4; drawScreen(); } return; }
+  if ((screen == 3 || screen == 4) && y < 54) { if (!touchHandled) { touchHandled = true; screen = 0; drawScreen(); } return; }
   if (screen == 2 && y >= 54 && y < 198) {
     int col = x < 120 ? 0 : 1; int row = (y - 54) / 48; int index = row * 2 + col; bool critical = index == 2 || index == 3;
-    if (index < 6 && (!critical || (millis() - touchStarted > 1200 && !touchHandled))) { if (critical) { touchHandled = true; notice = "Dlouhy stisk potvrzen"; } toggleRelay(index); delay(220); }
+    if (index < 6 && !touchHandled && (!critical || millis() - touchStarted > 1200)) { touchHandled = true; if (critical) notice = "Dlouhy stisk potvrzen"; toggleRelay(index); }
   }
 }
 
