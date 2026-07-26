@@ -20,6 +20,7 @@ DEVICE_API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar/d
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "60")))
 RELAY_POLL_INTERVAL = max(2, int(os.environ.get("RELAY_POLL_INTERVAL_SECONDS", "5")))
+DHT_ENABLED = os.environ.get("DHT_ENABLED", "1") == "1"
 RELAY_ACTIVE_LOW = os.environ.get("RELAY_ACTIVE_LOW", "1") == "1"
 RELAY_PINS = {
     "solar1": int(os.environ.get("RELAY_SOLAR1_GPIO", "5")),
@@ -40,11 +41,26 @@ if not API_URL or not TOKEN:
     raise SystemExit("Nastav SOLAR_API_URL a SOLAR_RPI_TOKEN.")
 
 i2c = board.I2C()
-dht = adafruit_dht.DHT11(board.D26)
-bmp_battery = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_BATTERY_ADDRESS)
-bmp_outside = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_OUTSIDE_ADDRESS)
-ina219 = adafruit_ina219.INA219(i2c)
-pico_bus = SMBus(PICO_I2C_BUS)
+
+def optional_device(factory, name):
+    try:
+        return factory()
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"senzor {name} neni dostupny: {error}", flush=True)
+        return None
+
+
+dht = optional_device(lambda: adafruit_dht.DHT11(board.D26), "DHT11") if DHT_ENABLED else None
+bmp_battery = optional_device(
+    lambda: adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_BATTERY_ADDRESS),
+    f"BMP280 {BMP_BATTERY_ADDRESS:#04x}",
+)
+bmp_outside = optional_device(
+    lambda: adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_OUTSIDE_ADDRESS),
+    f"BMP280 {BMP_OUTSIDE_ADDRESS:#04x}",
+)
+ina219 = optional_device(lambda: adafruit_ina219.INA219(i2c), "INA219")
+pico_bus = optional_device(lambda: SMBus(PICO_I2C_BUS), f"I2C bus {PICO_I2C_BUS}")
 gpio_handle = lgpio.gpiochip_open(0)
 relay_states = {name: False for name in RELAY_PINS}
 
@@ -93,13 +109,13 @@ def read_rpi_cpu_temperature():
 
 
 def read_sensors():
-    object_temperature = read_number(lambda: dht.temperature)
-    object_humidity = read_number(lambda: dht.humidity)
-    battery_temperature = read_number(lambda: bmp_battery.temperature)
-    outside_temperature = read_number(lambda: bmp_outside.temperature)
-    outside_pressure = read_number(lambda: bmp_outside.pressure)
-    battery_voltage = read_number(lambda: ina219.bus_voltage)
-    battery_current = read_number(lambda: ina219.current / 1000.0)
+    object_temperature = read_number(lambda: dht.temperature) if dht else None
+    object_humidity = read_number(lambda: dht.humidity) if dht else None
+    battery_temperature = read_number(lambda: bmp_battery.temperature) if bmp_battery else None
+    outside_temperature = read_number(lambda: bmp_outside.temperature) if bmp_outside else None
+    outside_pressure = read_number(lambda: bmp_outside.pressure) if bmp_outside else None
+    battery_voltage = read_number(lambda: ina219.bus_voltage) if ina219 else None
+    battery_current = read_number(lambda: ina219.current / 1000.0) if ina219 else None
     pico = read_pico()
     return {
         "rpi_cpu_temperature": read_rpi_cpu_temperature(),
@@ -119,6 +135,8 @@ def read_sensors():
 
 
 def read_pico():
+    if pico_bus is None:
+        return {"currents": [None, None, None], "mq9_raw": None, "mq9_voltage": None}
     try:
         write = i2c_msg.write(PICO_I2C_ADDRESS, [0x10])
         read = i2c_msg.read(PICO_I2C_ADDRESS, 24)
@@ -183,5 +201,7 @@ finally:
         except OSError:
             pass
     lgpio.gpiochip_close(gpio_handle)
-    dht.exit()
-    pico_bus.close()
+    if dht:
+        dht.exit()
+    if pico_bus:
+        pico_bus.close()
