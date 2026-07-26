@@ -107,7 +107,7 @@ void valueText(String value, int x, int y, uint16_t color = TEXT) { useLargeFont
 
 void nav() {
   tft.fillRect(0, NAV_Y, 240, 34, 0x0B1220);
-  const char* items[3] = {"PŘEHLED", "ENERGIE", "OVLÁDÁNÍ"};
+  const char* items[3] = {"PREHLED", "ENERGIE", "OVLADANI"};
   useSmallFont(); for (int i = 0; i < 3; i++) { tft.setTextColor(i == screen ? GREEN : MUTED, 0x0B1220); tft.drawCentreString(items[i], 40 + i * 80, 299, 1); }
 }
 
@@ -147,21 +147,21 @@ void drawDiagnostics() {
 }
 
 void drawOverviewLegacy() {
-  header("CHATA / ENERGIE", "živý dohled solární stanice");
+  header("CHATA / ENERGIE", "zivy dohled solarni stanice");
   card(14, 54, 100, 132); label("BATERIE", 24, 68);
   int level = isnan(telemetry.batteryVoltage) ? 0 : constrain((int)((telemetry.batteryVoltage - 11.0f) * 100.0f / 2.8f), 0, 100);
   tft.drawCircle(64, 124, 39, GREEN); tft.drawCircle(64, 124, 34, GREEN);
   useLargeFont(); tft.setTextColor(GREEN, PANEL); tft.drawCentreString(String(level) + "%", 64, 113, 4); useSmallFont();
   tft.setTextColor(MUTED, PANEL); tft.drawCentreString(volts(telemetry.batteryVoltage), 64, 151, 1);
-  card(122, 54, 104, 62); label("VÝROBA", 132, 68); valueText(watts(telemetry.solar1Power + telemetry.solar2Power), 132, 81, AMBER);
-  card(122, 124, 104, 62); label("SPOTŘEBA", 132, 138); valueText(watts(telemetry.loadPower), 132, 151, BLUE);
+  card(122, 54, 104, 62); label("VYROBA", 132, 68); valueText(watts(telemetry.solar1Power + telemetry.solar2Power), 132, 81, AMBER);
+  card(122, 124, 104, 62); label("SPOTREBA", 132, 138); valueText(watts(telemetry.loadPower), 132, 151, BLUE);
   nav();
 }
 
 void drawEnergy() {
-  header("ENERGIE", "výkon a teploty");
+  header("ENERGIE", "vykon a teploty");
   card(14, 54, 212, 58); label("PANELY", 26, 68); valueText(watts(telemetry.solar1Power), 26, 80, AMBER); valueText(watts(telemetry.solar2Power), 126, 80, AMBER);
-  card(14, 120, 100, 66); label("DNEŠNÍ VÝROBA", 22, 134); valueText(String(telemetry.solarEnergy) + " Wh", 22, 149, GREEN);
+  card(14, 120, 100, 66); label("DNESNI VYROBA", 22, 134); valueText(String(telemetry.solarEnergy) + " Wh", 22, 149, GREEN);
   card(126, 120, 100, 66); label("BATERIE", 136, 134); valueText(volts(telemetry.batteryVoltage), 136, 149, TEXT);
   card(14, 200, 212, 1, BG);
   useSmallFont(); tft.setTextColor(MUTED, BG); tft.drawString("Teplota baterie", 14, 197); tft.setTextColor(TEXT, BG); tft.drawRightString(isnan(telemetry.batteryTemp) ? "--" : String(telemetry.batteryTemp, 1) + " °C", 226, 197, 2);
@@ -169,7 +169,7 @@ void drawEnergy() {
 }
 
 void drawControl() {
-  header("OVLÁDÁNÍ", "dotykem přepínáš výstupy");
+  header("OVLADANI", "dotykem prepinat vystupy");
   useSmallFont(); for (int i = 0; i < 6; i++) { int col = i % 3, row = i / 3; int x = 8 + col * 77, y = 58 + row * 102; uint16_t color = relays[i] ? 0x252E : PANEL; card(x, y, 72, 88, color); tft.setTextColor(relays[i] ? GREEN : TEXT, color); tft.drawCentreString(relayNames[i], x + 36, y + 20, 1); tft.fillCircle(x + 36, y + 53, 13, relays[i] ? GREEN : MUTED); tft.setTextColor(relays[i] ? BG : TEXT, color); tft.drawCentreString(relays[i] ? "ON" : "OFF", x + 36, y + 49, 1); tft.setTextColor(MUTED, color); tft.drawCentreString((i == 2 || i == 3) ? "DRZET" : "KLIK", x + 36, y + 70, 1); }
   tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 270, 1); nav();
 }
@@ -178,9 +178,9 @@ void drawEmergencyOverlay() {
   if (emergencyBlink) {
     tft.fillScreen(emergencyBlinkPhase ? RED : BG);
     useLargeFont(); tft.setTextColor(TEXT, emergencyBlinkPhase ? RED : BG); tft.drawCentreString("STOP", 120, 82, 4);
-    useSmallFont(); tft.drawCentreString("ODPOJENA RELÉ", 120, 138, 2); tft.drawCentreString("Dlouze podrzte pro obnovu", 120, 174, 1);
+    useSmallFont(); tft.drawCentreString("ODPOJENA RELE", 120, 138, 2); tft.drawCentreString("Dlouze podrzte pro obnovu", 120, 174, 1);
   } else if (emergencyPrompt) {
-    tft.fillScreen(BG); useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawCentreString("RELÉ JSOU ODPOJENA", 120, 48, 2); tft.setTextColor(MUTED, BG); tft.drawCentreString("Chcete znovu pripojit", 120, 82, 1); tft.drawCentreString("panely a baterii?", 120, 98, 1);
+    tft.fillScreen(BG); useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawCentreString("RELE JSOU ODPOJENA", 120, 48, 2); tft.setTextColor(MUTED, BG); tft.drawCentreString("Chcete znovu pripojit", 120, 82, 1); tft.drawCentreString("panely a baterii?", 120, 98, 1);
     tft.fillRoundRect(14, 142, 100, 54, 10, GREEN); tft.setTextColor(BG, GREEN); tft.drawCentreString("ANO", 64, 163, 2);
     tft.fillRoundRect(126, 142, 100, 54, 10, PANEL); tft.setTextColor(TEXT, PANEL); tft.drawCentreString("NE", 176, 163, 2);
   }
@@ -195,13 +195,13 @@ bool apiRequest(const String& method, const String& body, String& response) {
 }
 
 void fetchData() {
-  String response; if (!apiRequest("GET", "", response)) { apiErrors++; lastApiError = millis(); offlineMode = true; notice = "API není dostupné"; drawScreen(); return; }
+  String response; if (!apiRequest("GET", "", response)) { apiErrors++; lastApiError = millis(); offlineMode = true; notice = "API neni dostupne"; drawScreen(); return; }
   JsonDocument filter; filter["telemetry"]["object_temperature"] = true; filter["telemetry"]["object_humidity"] = true; filter["telemetry"]["outside_temperature"] = true; filter["telemetry"]["mppt_temperature"] = true; filter["telemetry"]["solar1_current"] = true; filter["telemetry"]["solar2_current"] = true; filter["telemetry"]["battery_voltage"] = true; filter["telemetry"]["battery_current"] = true; filter["telemetry"]["solar1_power"] = true; filter["telemetry"]["solar2_power"] = true; filter["telemetry"]["load_power"] = true; filter["telemetry"]["battery_temperature"] = true; filter["telemetry"]["solar_energy_today_wh"] = true; filter["relays"] = true;
-  JsonDocument doc; if (deserializeJson(doc, response, DeserializationOption::Filter(filter))) { apiErrors++; lastApiError = millis(); offlineMode = true; notice = "Chybná data"; drawScreen(); return; }
+  JsonDocument doc; if (deserializeJson(doc, response, DeserializationOption::Filter(filter))) { apiErrors++; lastApiError = millis(); offlineMode = true; notice = "Chybna data"; drawScreen(); return; }
   JsonObject data = doc["telemetry"];
   telemetry.batteryVoltage = number(data["battery_voltage"]); telemetry.batteryCurrent = number(data["battery_current"]); telemetry.solar1Power = number(data["solar1_power"]); telemetry.solar2Power = number(data["solar2_power"]); telemetry.solar1Current = number(data["solar1_current"]); telemetry.solar2Current = number(data["solar2_current"]); telemetry.loadPower = number(data["load_power"]); telemetry.batteryTemp = number(data["battery_temperature"]); telemetry.objectTemp = number(data["object_temperature"]); telemetry.outsideTemp = number(data["outside_temperature"]); telemetry.mpptTemp = number(data["mppt_temperature"]); telemetry.objectHumidity = number(data["object_humidity"]); telemetry.solarEnergy = data["solar_energy_today_wh"] | 0; telemetry.recordedAt = data["recorded_at"] | "";
   JsonObject states = doc["relays"]; for (int i = 0; i < 6; i++) relays[i] = states[relayNames[i]] | false;
-  hasTelemetry = true; lastDataSuccess = millis(); offlineMode = false; saveTelemetry(); notice = "Aktualizováno"; drawScreen();
+  hasTelemetry = true; lastDataSuccess = millis(); offlineMode = false; saveTelemetry(); notice = "Aktualizovano"; drawScreen();
 }
 
 void fetchWeather() {
@@ -233,14 +233,14 @@ void disconnectSafetyRelays() {
 void reconnectSafetyRelays() {
   bool ok = true;
   for (int index : {0, 1, 2}) ok = setRelayState(index, true) && ok;
-  if (ok) { relays[0] = true; relays[1] = true; relays[2] = true; notice = "Relé pripojeno"; }
+  if (ok) { relays[0] = true; relays[1] = true; relays[2] = true; notice = "Rele pripojeno"; }
   else { notice = "Chyba pripojovani"; }
   drawScreen();
 }
 
 void toggleRelay(int index) {
   String body = String("{\"relay\":\"") + relayNames[index] + "\",\"isOn\":" + (!relays[index] ? "true" : "false") + "}"; String response;
-  if (apiRequest("POST", body, response)) { notice = "Overuji stav relé"; fetchData(); } else { notice = "API chyba HTTP " + String(lastHttpCode); drawScreen(); }
+  if (apiRequest("POST", body, response)) { notice = "Overuji stav rele"; fetchData(); } else { notice = "API chyba HTTP " + String(lastHttpCode); drawScreen(); }
 }
 
 void touchInput() {
@@ -251,7 +251,7 @@ void touchInput() {
   if (emergencyPrompt) {
     if (!touchHandled && y >= 142 && y < 196) {
       touchHandled = true; emergencyPrompt = false;
-      if (x < 120) reconnectSafetyRelays(); else { notice = "Relé zustavaji odpojena"; drawScreen(); }
+      if (x < 120) reconnectSafetyRelays(); else { notice = "Rele zustavaji odpojena"; drawScreen(); }
     }
     return;
   }
@@ -286,5 +286,5 @@ void setupOTA() {
   Serial.printf("OTA pripraveno: %s:8266\n", WiFi.localIP().toString().c_str());
 }
 
-void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepřipojilo"; drawScreen(); }
+void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepripojilo"; drawScreen(); }
 void loop() { uint32_t loopStarted = millis(); esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (emergencyBlink && millis() - lastEmergencyBlink > 400) { lastEmergencyBlink = millis(); emergencyBlinkPhase = !emergencyBlinkPhase; drawEmergencyOverlay(); } if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } updateCpuLoad(loopStarted); delay(20); }
