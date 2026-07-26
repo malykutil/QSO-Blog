@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getSupabaseAdminClient } from "@/src/lib/supabase-server";
+import { getSupabaseAdminClient, getSupabaseRouteClient } from "@/src/lib/supabase-server";
 import { defaultSolarRelayState, solarRelayNames, solarTelemetryFields, type SolarRelayName } from "@/src/lib/solar-data";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ function validDeviceRequest(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   if (!validDeviceRequest(request)) return NextResponse.json({ error: "Neplatny device token." }, { status: 401 });
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseAdminClient() ?? await getSupabaseRouteClient();
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
 
   const [telemetryResult, relaysResult] = await Promise.all([
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!validDeviceRequest(request)) return NextResponse.json({ error: "Neplatny device token." }, { status: 401 });
-  const supabase = getSupabaseAdminClient();
+  const supabase = getSupabaseAdminClient() ?? await getSupabaseRouteClient();
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
   let payload: { relay?: unknown; isOn?: unknown };
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatne JSON." }, { status: 400 }); }

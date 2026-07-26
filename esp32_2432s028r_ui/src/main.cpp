@@ -164,8 +164,8 @@ void drawEnergy() {
 
 void drawControl() {
   header("OVLÁDÁNÍ", "dotykem přepínáš výstupy");
-  useSmallFont(); for (int i = 0; i < 6; i++) { int col = i % 2, row = i / 2; int x = 14 + col * 108, y = 54 + row * 48; uint16_t color = relays[i] ? 0x252E : PANEL; card(x, y, 100, 40, color); tft.setTextColor(relays[i] ? GREEN : TEXT, color); tft.drawString(relayNames[i], x + 8, y + 7); tft.fillCircle(x + 86, y + 20, 6, relays[i] ? GREEN : MUTED); }
-  tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 220, 1); nav();
+  useSmallFont(); for (int i = 0; i < 6; i++) { int col = i % 3, row = i / 3; int x = 8 + col * 77, y = 58 + row * 102; uint16_t color = relays[i] ? 0x252E : PANEL; card(x, y, 72, 88, color); tft.setTextColor(relays[i] ? GREEN : TEXT, color); tft.drawCentreString(relayNames[i], x + 36, y + 20, 1); tft.fillCircle(x + 36, y + 53, 13, relays[i] ? GREEN : MUTED); tft.setTextColor(relays[i] ? BG : TEXT, color); tft.drawCentreString(relays[i] ? "ON" : "OFF", x + 36, y + 49, 1); tft.setTextColor(MUTED, color); tft.drawCentreString((i == 2 || i == 3) ? "DRZET" : "KLIK", x + 36, y + 70, 1); }
+  tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 270, 1); nav();
 }
 
 void drawEmergencyOverlay() {
@@ -260,8 +260,8 @@ void touchInput() {
   if (screen == 0 && y >= 54 && y < 116) { if (!touchHandled) { touchHandled = true; screen = 3; drawScreen(); } return; }
   if (screen == 0 && x >= 170 && y < 54) { if (!touchHandled) { touchHandled = true; screen = 4; drawScreen(); } return; }
   if ((screen == 3 || screen == 4) && y < 54) { if (!touchHandled) { touchHandled = true; screen = 0; drawScreen(); } return; }
-  if (screen == 2 && y >= 54 && y < 198) {
-    int col = x < 120 ? 0 : 1; int row = (y - 54) / 48; int index = row * 2 + col; bool critical = index == 2 || index == 3;
+  if (screen == 2 && y >= 54 && y < NAV_Y) {
+    int col = constrain((x - 8) / 77, 0, 2); int row = y < 160 ? 0 : 1; int index = row * 3 + col; bool critical = index == 2 || index == 3;
     if (index < 6 && !touchHandled && (!critical || heldFor > 1200)) { touchHandled = true; if (critical) notice = "Dlouhy stisk potvrzen"; toggleRelay(index); }
   }
 }
