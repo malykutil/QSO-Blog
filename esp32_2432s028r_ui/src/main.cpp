@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <XPT2046_Touchscreen.h>
 #include <esp_task_wdt.h>
+#include <esp_heap_caps.h>
 #include <time.h>
 
 #include "secrets.h"
@@ -50,6 +51,9 @@ uint32_t lastDataSuccess = 0;
 uint32_t bootMillis = 0;
 uint32_t apiErrors = 0;
 uint32_t lastApiError = 0;
+uint32_t cpuWindowStarted = 0;
+uint32_t cpuBusyMillis = 0;
+uint8_t cpuLoadPercent = 0;
 bool offlineMode = true;
 bool hasTelemetry = false;
 bool otaInProgress = false;
@@ -74,6 +78,8 @@ String measurementTime() { return telemetry.recordedAt.length() >= 16 ? "RPi " +
 String dataAge() { if (!hasTelemetry || lastDataSuccess == 0) return "data --"; uint32_t seconds = (millis() - lastDataSuccess) / 1000; if (seconds < 60) return "data " + String(seconds) + " s"; return "data " + String(seconds / 60) + " min"; }
 bool isNight() { struct tm timeinfo; if (!getLocalTime(&timeinfo, 10)) return false; return timeinfo.tm_hour >= 22 || timeinfo.tm_hour < 7; }
 String rssiText() { return WiFi.status() == WL_CONNECTED ? "WiFi " + String(WiFi.RSSI()) + " dBm" : "WiFi offline"; }
+String ramText() { uint32_t total = ESP.getHeapSize(); uint32_t free = ESP.getFreeHeap(); uint32_t used = total > free ? total - free : 0; uint8_t percent = total ? (uint8_t)constrain((used * 100UL) / total, 0UL, 100UL) : 0; return String(used / 1024) + "/" + String(total / 1024) + " kB (" + String(percent) + " %)"; }
+void updateCpuLoad(uint32_t loopStarted) { if (cpuWindowStarted == 0) cpuWindowStarted = loopStarted; cpuBusyMillis += millis() - loopStarted; uint32_t elapsed = millis() - cpuWindowStarted; if (elapsed >= 1000) { uint32_t denominator = elapsed == 0 ? 1U : elapsed; cpuLoadPercent = (uint8_t)constrain((cpuBusyMillis * 100UL) / denominator, 0UL, 100UL); cpuBusyMillis = 0; cpuWindowStarted = millis(); } }
 void openPreferences() { static bool opened = false; if (!opened) { preferences.begin("solar", false); opened = true; } }
 void saveTelemetry() { openPreferences(); preferences.putBool("valid", true); preferences.putFloat("obj", telemetry.objectTemp); preferences.putFloat("hum", telemetry.objectHumidity); preferences.putFloat("bat", telemetry.batteryTemp); preferences.putFloat("out", telemetry.outsideTemp); preferences.putFloat("mppt", telemetry.mpptTemp); preferences.putFloat("s1a", telemetry.solar1Current); preferences.putFloat("s2a", telemetry.solar2Current); preferences.putFloat("bvol", telemetry.batteryVoltage); preferences.putFloat("bcur", telemetry.batteryCurrent); preferences.putFloat("s1p", telemetry.solar1Power); preferences.putFloat("s2p", telemetry.solar2Power); preferences.putFloat("loadp", telemetry.loadPower); preferences.putInt("energy", telemetry.solarEnergy); preferences.putString("recorded", telemetry.recordedAt); }
 void loadTelemetry() { openPreferences(); if (!preferences.getBool("valid", false)) return; telemetry.objectTemp = preferences.getFloat("obj", NAN); telemetry.objectHumidity = preferences.getFloat("hum", NAN); telemetry.batteryTemp = preferences.getFloat("bat", NAN); telemetry.outsideTemp = preferences.getFloat("out", NAN); telemetry.mpptTemp = preferences.getFloat("mppt", NAN); telemetry.solar1Current = preferences.getFloat("s1a", NAN); telemetry.solar2Current = preferences.getFloat("s2a", NAN); telemetry.batteryVoltage = preferences.getFloat("bvol", NAN); telemetry.batteryCurrent = preferences.getFloat("bcur", NAN); telemetry.solar1Power = preferences.getFloat("s1p", NAN); telemetry.solar2Power = preferences.getFloat("s2p", NAN); telemetry.loadPower = preferences.getFloat("loadp", NAN); telemetry.solarEnergy = preferences.getInt("energy", 0); telemetry.recordedAt = preferences.getString("recorded", ""); hasTelemetry = true; notice = "NVS cache"; }
@@ -129,15 +135,12 @@ void drawTemperatures() {
 
 void drawDiagnostics() {
   header("DIAGNOSTIKA", "stav ESP32 a pripojeni");
-  useSmallFont(); tft.setTextColor(TEXT, BG);
-  tft.drawString("IP: " + WiFi.localIP().toString(), 14, 66);
-  tft.drawString(rssiText(), 14, 88);
-  tft.drawString("Heap: " + String(ESP.getFreeHeap() / 1024) + " kB", 14, 110);
-  tft.drawString("Uptime: " + String((millis() - bootMillis) / 3600000) + " h " + String(((millis() - bootMillis) / 60000) % 60) + " min", 14, 132);
-  tft.drawString("API chyby: " + String(apiErrors), 14, 154);
-  tft.drawString("Posledni chyba: " + String(lastApiError ? lastApiError / 1000 : 0) + " s", 14, 176);
-  tft.drawString(offlineMode ? "Rezim: OFFLINE / CACHE" : "Rezim: ONLINE", 14, 198);
-  tft.drawString("Dotyk vlevo nahore = zpet", 14, 244); nav();
+  card(10, 56, 106, 86); card(124, 56, 106, 86);
+  card(10, 150, 106, 86); card(124, 150, 106, 86);
+  useSmallFont(); tft.setTextColor(MUTED, PANEL); tft.drawString("WI-FI", 20, 68); tft.drawString("VYKON", 134, 68); tft.drawString("PAMET", 20, 162); tft.drawString("SYSTEM", 134, 162);
+  tft.setTextColor(TEXT, PANEL); tft.drawString(WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) + " dBm" : "offline", 20, 88); tft.drawString(String(cpuLoadPercent) + " %", 134, 88); tft.drawString(ramText(), 20, 182); tft.drawString(String((millis() - bootMillis) / 3600000) + " h " + String(((millis() - bootMillis) / 60000) % 60) + " min", 134, 182);
+  tft.setTextColor(MUTED, PANEL); tft.drawString(WiFi.localIP().toString(), 20, 112); tft.drawString(String(getCpuFrequencyMhz()) + " MHz", 134, 112); tft.drawString("min " + String(ESP.getMinFreeHeap() / 1024) + " kB", 20, 206); tft.drawString(offlineMode ? "offline" : "online", 134, 206);
+  tft.setTextColor(MUTED, BG); tft.drawString("API chyby: " + String(apiErrors), 14, 252); tft.drawRightString("RAM volne " + String(ESP.getFreeHeap() / 1024) + " kB", 226, 252, 1); nav();
 }
 
 void drawOverviewLegacy() {
@@ -281,4 +284,4 @@ void setupOTA() {
 }
 
 void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepřipojilo"; drawScreen(); }
-void loop() { esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (emergencyBlink && millis() - lastEmergencyBlink > 400) { lastEmergencyBlink = millis(); emergencyBlinkPhase = !emergencyBlinkPhase; drawEmergencyOverlay(); } if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } delay(20); }
+void loop() { uint32_t loopStarted = millis(); esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (emergencyBlink && millis() - lastEmergencyBlink > 400) { lastEmergencyBlink = millis(); emergencyBlinkPhase = !emergencyBlinkPhase; drawEmergencyOverlay(); } if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } updateCpuLoad(loopStarted); delay(20); }
