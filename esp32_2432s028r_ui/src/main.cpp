@@ -21,8 +21,8 @@ Preferences preferences;
 bool fontsReady = false;
 bool fontLoaded = false;
 
-void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("NotoSansBold15", LittleFS); fontLoaded = true; }
-void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("NotoSansBold36", LittleFS); fontLoaded = true; }
+void useSmallFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("CzechSans15", LittleFS); fontLoaded = true; }
+void useLargeFont() { if (fontLoaded) { tft.unloadFont(); fontLoaded = false; } tft.loadFont("CzechSans32", LittleFS); fontLoaded = true; }
 
 constexpr int TOUCH_IRQ = 36;
 constexpr int BACKLIGHT_PIN = 21;
