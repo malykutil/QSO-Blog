@@ -28,7 +28,9 @@ constexpr int TOUCH_IRQ = 36;
 constexpr int BACKLIGHT_PIN = 21;
 constexpr int LIGHT_SENSOR_PIN = 34;
 constexpr int BACKLIGHT_CHANNEL = 0;
-constexpr uint16_t NAV_Y = 286;
+constexpr int SCREEN_WIDTH = 240;
+constexpr int SCREEN_HEIGHT = 320;
+constexpr uint16_t NAV_Y = SCREEN_HEIGHT - 34;
 constexpr uint16_t BG = 0x1082;
 constexpr uint16_t PANEL = 0x18E5;
 constexpr uint16_t TEXT = 0xE7F7;
@@ -242,7 +244,7 @@ void toggleRelay(int index) {
 
 void touchInput() {
   if (!touch.touched()) { touchDown = false; touchedRelay = -1; emergencyLongPressHandled = false; return; }
-  lastInteraction = millis(); updateBacklight(); TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, 239), 0, 239); int y = constrain(map(p.y, 240, 3800, 0, 319), 0, 319);
+  lastInteraction = millis(); updateBacklight(); TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, SCREEN_WIDTH - 1), 0, SCREEN_WIDTH - 1); int y = constrain(map(p.y, 240, 3800, 0, SCREEN_HEIGHT - 1), 0, SCREEN_HEIGHT - 1);
   if (!touchDown) { touchDown = true; touchHandled = false; touchStarted = millis(); emergencyLongPressHandled = false; }
   uint32_t heldFor = millis() - touchStarted;
   if (emergencyPrompt) {
