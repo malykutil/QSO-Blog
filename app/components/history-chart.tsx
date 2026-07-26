@@ -17,6 +17,15 @@ function formatDate(date: string, withSeconds = false) {
   }).format(new Date(date));
 }
 
+function formatAxisDate(date: string, spanHours: number) {
+  const options: Intl.DateTimeFormatOptions = spanHours <= 24
+    ? { hour: "2-digit", minute: "2-digit" }
+    : spanHours <= 48
+      ? { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }
+      : { day: "numeric", month: "numeric" };
+  return new Intl.DateTimeFormat("cs-CZ", options).format(new Date(date));
+}
+
 export function InteractiveHistoryChart({ history, series, title, unit }: { history: SolarTelemetry[]; series: ChartSeries; title: string; unit: string }) {
   const width = 900;
   const height = 290;
@@ -32,6 +41,11 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
   const pointX = (index: number) => history.length > 1 ? (index / (history.length - 1)) * width : width / 2;
   const pointY = (key: NumericTelemetryKey, index: number) => height - (((history[index][key] ?? 0) - min) / span) * plotHeight - padding;
   const pathFor = (key: NumericTelemetryKey) => history.map((item, index) => `${index === 0 ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)}`).join(" ");
+  const spanHours = history.length > 1 ? (new Date(history[history.length - 1].recorded_at).getTime() - new Date(history[0].recorded_at).getTime()) / 3600000 : 0;
+  const timeTicks = Array.from({ length: 5 }, (_, index) => {
+    const historyIndex = Math.round((index / 4) * Math.max(0, history.length - 1));
+    return { index: historyIndex, x: pointX(historyIndex), label: history[historyIndex] ? formatAxisDate(history[historyIndex].recorded_at, spanHours) : "" };
+  });
   const handlePointerMove = (event: React.PointerEvent<SVGRectElement>) => {
     if (history.length < 2) return;
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -48,8 +62,8 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     {history.length < 2 ? <p className="mt-6 rounded-[1.2rem] bg-slate-100 px-4 py-4 text-sm text-slate-600">Pro graf potřebuji alespoň dvě měření z Raspberry Pi.</p> : <>
       <div className="mt-6 overflow-hidden rounded-[1.5rem] bg-slate-950 p-3">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`${title}. Najetím myší zobrazíte čas a hodnoty.`} onMouseLeave={() => setHoveredIndex(null)}>
-          <g stroke="#29404c" strokeWidth="1"><path d={`M0 ${padding}H${width}`} /><path d={`M0 ${height / 2}H${width}`} /><path d={`M0 ${height - padding}H${width}`} /></g>
-          <g fill="#94a3b8" fontSize="12"><text x="8" y={padding + 4}>{formatValue(axisLabels[0], unit)}</text><text x="8" y={height / 2 + 4}>{formatValue(axisLabels[1], unit)}</text><text x="8" y={height - padding - 4}>{formatValue(axisLabels[2], unit)}</text><text x="58" y={height - 3}>{formatDate(history[0].recorded_at)}</text><text x={width - 58} y={height - 3} textAnchor="end">{formatDate(history[history.length - 1].recorded_at)}</text></g>
+          <g stroke="#29404c" strokeWidth="1"><path d={`M0 ${padding}H${width}`} /><path d={`M0 ${height / 2}H${width}`} /><path d={`M0 ${height - padding}H${width}`} />{timeTicks.map((tick) => <path key={`grid-${tick.index}`} d={`M${tick.x} ${padding}V${height - padding}`} stroke="#29404c" strokeDasharray="2 7" opacity=".8" />)}</g>
+          <g fill="#94a3b8" fontSize="12"><text x="8" y={padding + 4}>{formatValue(axisLabels[0], unit)}</text><text x="8" y={height / 2 + 4}>{formatValue(axisLabels[1], unit)}</text><text x="8" y={height - padding - 4}>{formatValue(axisLabels[2], unit)}</text>{timeTicks.map((tick, index) => <text key={`label-${tick.index}`} x={tick.x} y={height - 3} textAnchor={index === 0 ? "start" : index === timeTicks.length - 1 ? "end" : "middle"}>{tick.label}</text>)}</g>
           {min < 0 ? <path d={`M0 ${height - ((0 - min) / span) * plotHeight - padding}H${width}`} stroke="#cbd5e1" strokeDasharray="5 5" /> : null}
           {visibleSeries.map(([key, , color]) => <path key={String(key)} d={pathFor(key)} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />)}
           {hoveredPoint && hoveredIndex !== null ? <>
