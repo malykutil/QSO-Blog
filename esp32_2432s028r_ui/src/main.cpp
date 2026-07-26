@@ -58,6 +58,11 @@ bool touchDown = false;
 bool touchHandled = false;
 uint32_t touchStarted = 0;
 int touchedRelay = -1;
+bool emergencyBlink = false;
+bool emergencyPrompt = false;
+bool emergencyLongPressHandled = false;
+bool emergencyBlinkPhase = false;
+uint32_t lastEmergencyBlink = 0;
 String notice = "Pripojuji WiFi...";
 
 float number(JsonVariantConst value) { return value.isNull() ? NAN : value.as<float>(); }
@@ -163,7 +168,19 @@ void drawControl() {
   tft.setTextColor(MUTED, BG); tft.drawCentreString(notice.c_str(), 120, 220, 1); nav();
 }
 
-void drawScreen() { if (!hasTelemetry) loadTelemetry(); if (otaInProgress) { drawOtaProgress(); return; } if (screen == 0) drawOverview(); else if (screen == 1) drawEnergy(); else if (screen == 2) drawControl(); else if (screen == 3) drawTemperatures(); else drawDiagnostics(); }
+void drawEmergencyOverlay() {
+  if (emergencyBlink) {
+    tft.fillScreen(emergencyBlinkPhase ? RED : BG);
+    useLargeFont(); tft.setTextColor(TEXT, emergencyBlinkPhase ? RED : BG); tft.drawCentreString("STOP", 120, 82, 4);
+    useSmallFont(); tft.drawCentreString("ODPOJENA RELÉ", 120, 138, 2); tft.drawCentreString("Dlouze podrzte pro obnovu", 120, 174, 1);
+  } else if (emergencyPrompt) {
+    tft.fillScreen(BG); useSmallFont(); tft.setTextColor(TEXT, BG); tft.drawCentreString("RELÉ JSOU ODPOJENA", 120, 48, 2); tft.setTextColor(MUTED, BG); tft.drawCentreString("Chcete znovu pripojit", 120, 82, 1); tft.drawCentreString("panely a baterii?", 120, 98, 1);
+    tft.fillRoundRect(14, 142, 100, 54, 10, GREEN); tft.setTextColor(BG, GREEN); tft.drawCentreString("ANO", 64, 163, 2);
+    tft.fillRoundRect(126, 142, 100, 54, 10, PANEL); tft.setTextColor(TEXT, PANEL); tft.drawCentreString("NE", 176, 163, 2);
+  }
+}
+
+void drawScreen() { if (!hasTelemetry) loadTelemetry(); if (otaInProgress) { drawOtaProgress(); return; } if (screen == 0) drawOverview(); else if (screen == 1) drawEnergy(); else if (screen == 2) drawControl(); else if (screen == 3) drawTemperatures(); else drawDiagnostics(); if (emergencyBlink || emergencyPrompt) drawEmergencyOverlay(); }
 
 bool apiRequest(const String& method, const String& body, String& response) {
   if (WiFi.status() != WL_CONNECTED) return false;
@@ -191,22 +208,61 @@ void fetchWeather() {
   forecast.min = number(day["min"]); forecast.max = number(day["max"]); forecast.estimatedKwh = number(day["estimatedKwh"]); forecast.weatherCode = day["weatherCode"] | -1; forecast.valid = !isnan(forecast.min) || !isnan(forecast.max);
 }
 
+bool setRelayState(int index, bool state) {
+  String body = String("{\"relay\":\"") + relayNames[index] + "\",\"isOn\":" + (state ? "true" : "false") + "}"; String response;
+  if (!apiRequest("POST", body, response)) return false;
+  JsonDocument reply;
+  if (deserializeJson(reply, response)) return false;
+  return reply["ok"].as<bool>() && reply["relay"].as<String>() == relayNames[index] && reply["isOn"].as<bool>() == state;
+}
+
+void disconnectSafetyRelays() {
+  bool ok = true;
+  for (int index : {0, 1, 2}) ok = setRelayState(index, false) && ok;
+  if (ok) { relays[0] = false; relays[1] = false; relays[2] = false; notice = "Bezpecne odpojeno"; }
+  else { notice = "Chyba odpojovani"; }
+  drawScreen();
+}
+
+void reconnectSafetyRelays() {
+  bool ok = true;
+  for (int index : {0, 1, 2}) ok = setRelayState(index, true) && ok;
+  if (ok) { relays[0] = true; relays[1] = true; relays[2] = true; notice = "Relé pripojeno"; }
+  else { notice = "Chyba pripojovani"; }
+  drawScreen();
+}
+
 void toggleRelay(int index) {
   String body = String("{\"relay\":\"") + relayNames[index] + "\",\"isOn\":" + (!relays[index] ? "true" : "false") + "}"; String response;
   if (apiRequest("POST", body, response)) { notice = "Overuji stav relé"; fetchData(); } else { notice = "Ovládání selhalo"; drawScreen(); }
 }
 
 void touchInput() {
-  if (!touch.touched()) { touchDown = false; touchedRelay = -1; return; }
+  if (!touch.touched()) { touchDown = false; touchedRelay = -1; emergencyLongPressHandled = false; return; }
   lastInteraction = millis(); updateBacklight(); TS_Point p = touch.getPoint(); int x = constrain(map(p.x, 200, 3700, 0, 239), 0, 239); int y = constrain(map(p.y, 240, 3800, 0, 319), 0, 319);
-  if (!touchDown) { touchDown = true; touchHandled = false; touchStarted = millis(); }
+  if (!touchDown) { touchDown = true; touchHandled = false; touchStarted = millis(); emergencyLongPressHandled = false; }
+  uint32_t heldFor = millis() - touchStarted;
+  if (emergencyPrompt) {
+    if (!touchHandled && y >= 142 && y < 196) {
+      touchHandled = true; emergencyPrompt = false;
+      if (x < 120) reconnectSafetyRelays(); else { notice = "Relé zustavaji odpojena"; drawScreen(); }
+    }
+    return;
+  }
+  if (emergencyBlink) {
+    if (!emergencyLongPressHandled && heldFor > 2500) { emergencyLongPressHandled = true; emergencyBlink = false; emergencyPrompt = true; drawScreen(); }
+    return;
+  }
+  if (!emergencyLongPressHandled && heldFor > 2500) {
+    emergencyLongPressHandled = true; emergencyBlink = true; emergencyBlinkPhase = true; lastEmergencyBlink = millis(); disconnectSafetyRelays(); return;
+  }
   if (y >= NAV_Y) { if (!touchHandled) { touchHandled = true; screen = constrain(x / 80, 0, 2); drawScreen(); } return; }
   if (screen == 0 && y >= 54 && y < 116) { if (!touchHandled) { touchHandled = true; screen = 3; drawScreen(); } return; }
   if (screen == 0 && x >= 170 && y < 54) { if (!touchHandled) { touchHandled = true; screen = 4; drawScreen(); } return; }
   if ((screen == 3 || screen == 4) && y < 54) { if (!touchHandled) { touchHandled = true; screen = 0; drawScreen(); } return; }
   if (screen == 2 && y >= 54 && y < 198) {
     int col = x < 120 ? 0 : 1; int row = (y - 54) / 48; int index = row * 2 + col; bool critical = index == 2 || index == 3;
-    if (index < 6 && !touchHandled && (!critical || millis() - touchStarted > 1200)) { touchHandled = true; if (critical) notice = "Dlouhy stisk potvrzen"; toggleRelay(index); }
+    if (index < 6 && !touchHandled && (!critical || heldFor > 1200)) { touchHandled = true; if (critical) notice = "Dlouhy stisk potvrzen"; toggleRelay(index); }
   }
 }
 
@@ -225,4 +281,4 @@ void setupOTA() {
 }
 
 void setup() { Serial.begin(115200); pinMode(21, OUTPUT); digitalWrite(21, HIGH); tft.init(); tft.setRotation(0); touchSPI.begin(25, 39, 32, 33); touch.begin(touchSPI); touch.setRotation(0); if (!LittleFS.begin(true)) { notice = "LittleFS chyba"; drawScreen(); while (true) delay(1000); } if (!LittleFS.exists("/CzechSans15.vlw") || !LittleFS.exists("/CzechSans32.vlw")) { notice = "Chybi fonty"; drawScreen(); while (true) delay(1000); } fontsReady = true; useSmallFont(); drawScreen(); WiFi.setSleep(false); WiFi.setHostname("qso-esp32-solar"); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t start = millis(); while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) { delay(300); } if (WiFi.status() == WL_CONNECTED) { setupOTA(); notice = WiFi.localIP().toString(); } else notice = "WiFi se nepřipojilo"; drawScreen(); }
-void loop() { esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } delay(20); }
+void loop() { esp_task_wdt_reset(); ArduinoOTA.handle(); touchInput(); if (emergencyBlink && millis() - lastEmergencyBlink > 400) { lastEmergencyBlink = millis(); emergencyBlinkPhase = !emergencyBlinkPhase; drawEmergencyOverlay(); } if (hasTelemetry && lastDataSuccess && millis() - lastDataSuccess > 120000) offlineMode = true; if (millis() - lastBrightnessUpdate > 1000) { lastBrightnessUpdate = millis(); updateBacklight(); } if (millis() - lastFetch > 60000) { lastFetch = millis(); fetchData(); } static uint32_t lastWeatherFetch = 0; if (lastWeatherFetch == 0 || millis() - lastWeatherFetch > 30000) { lastWeatherFetch = millis(); fetchWeather(); drawScreen(); } delay(20); }
