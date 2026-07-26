@@ -11,11 +11,23 @@ import adafruit_bmp280
 import adafruit_dht
 import adafruit_ina219
 import board
+import lgpio
 from smbus2 import SMBus, i2c_msg
 
 API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
+DEVICE_API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar/device"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "60")))
+RELAY_POLL_INTERVAL = max(2, int(os.environ.get("RELAY_POLL_INTERVAL_SECONDS", "5")))
+RELAY_ACTIVE_LOW = os.environ.get("RELAY_ACTIVE_LOW", "1") == "1"
+RELAY_PINS = {
+    "solar1": int(os.environ.get("RELAY_SOLAR1_GPIO", "5")),
+    "solar2": int(os.environ.get("RELAY_SOLAR2_GPIO", "6")),
+    "battery": int(os.environ.get("RELAY_BATTERY_GPIO", "13")),
+    "bufik": int(os.environ.get("RELAY_BUFIK_GPIO", "16")),
+    "fan12v": int(os.environ.get("RELAY_FAN12V_GPIO", "19")),
+    "fan24v": int(os.environ.get("RELAY_FAN24V_GPIO", "20")),
+}
 BMP_BATTERY_ADDRESS = int(os.environ.get("BMP_BATTERY_ADDRESS", "0x76"), 0)
 BMP_OUTSIDE_ADDRESS = int(os.environ.get("BMP_OUTSIDE_ADDRESS", "0x77"), 0)
 PICO_I2C_BUS = int(os.environ.get("PICO_I2C_BUS", "1"))
@@ -32,6 +44,36 @@ bmp_battery = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_BATTERY_ADDRE
 bmp_outside = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=BMP_OUTSIDE_ADDRESS)
 ina219 = adafruit_ina219.INA219(i2c)
 pico_bus = SMBus(PICO_I2C_BUS)
+gpio_handle = lgpio.gpiochip_open(0)
+relay_states = {name: False for name in RELAY_PINS}
+
+
+def relay_level(is_on):
+    return (0 if is_on else 1) if RELAY_ACTIVE_LOW else (1 if is_on else 0)
+
+
+def setup_relays():
+    for pin in RELAY_PINS.values():
+        lgpio.gpio_claim_output(gpio_handle, pin, relay_level(False))
+
+
+def apply_relay(name, is_on):
+    pin = RELAY_PINS[name]
+    lgpio.gpio_write(gpio_handle, pin, relay_level(is_on))
+    relay_states[name] = is_on
+
+
+def fetch_relay_states():
+    request = urllib.request.Request(DEVICE_API_URL, headers={
+        "Authorization": f"Bearer {TOKEN}",
+        "User-Agent": "qso-blog-rpi-relay/1.0",
+    }, method="GET")
+    with urllib.request.urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    for name, is_on in payload.get("relays", {}).items():
+        if name in RELAY_PINS and isinstance(is_on, bool) and relay_states[name] != is_on:
+            apply_relay(name, is_on)
+    return payload.get("relays", {})
 
 
 def read_number(read):
@@ -104,14 +146,33 @@ def send(payload):
 
 
 try:
+    setup_relays()
+    next_telemetry = 0.0
+    next_relay_poll = 0.0
     while True:
-        try:
-            payload = read_sensors()
-            send(payload)
-            print("odesláno: " + json.dumps(payload, ensure_ascii=False), flush=True)
-        except (RuntimeError, urllib.error.URLError, TimeoutError, OSError) as error:
-            print(f"chyba měření/odeslání: {error}", flush=True)
-        time.sleep(INTERVAL)
+        now = time.monotonic()
+        if now >= next_relay_poll:
+            try:
+                states = fetch_relay_states()
+                print("relé: " + json.dumps(states, ensure_ascii=False), flush=True)
+            except (RuntimeError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+                print(f"chyba stavu relé: {error}", flush=True)
+            next_relay_poll = now + RELAY_POLL_INTERVAL
+        if now >= next_telemetry:
+            try:
+                payload = read_sensors()
+                send(payload)
+                print("odesláno: " + json.dumps(payload, ensure_ascii=False), flush=True)
+            except (RuntimeError, urllib.error.URLError, TimeoutError, OSError) as error:
+                print(f"chyba měření/odeslání: {error}", flush=True)
+            next_telemetry = now + INTERVAL
+        time.sleep(1)
 finally:
+    for name in RELAY_PINS:
+        try:
+            apply_relay(name, False)
+        except OSError:
+            pass
+    lgpio.gpiochip_close(gpio_handle)
     dht.exit()
     pico_bus.close()

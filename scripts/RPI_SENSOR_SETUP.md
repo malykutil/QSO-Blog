@@ -33,6 +33,7 @@ Alternativa s Arduino Nano: firmware je v `arduino_nano_adc_i2c/`. ACS712 jsou n
 ## Instalace na RPi
 
 ```bash
+sudo apt install -y python3-lgpio
 python3 -m pip install --break-system-packages adafruit-circuitpython-dht adafruit-circuitpython-bmp280 adafruit-circuitpython-ina219 adafruit-blinka
 sudo cp rpi-telemetry.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -41,3 +42,33 @@ sudo journalctl -u rpi-telemetry -f
 ```
 
 V `/home/ft-891/qso-blog.env` nastav `SOLAR_API_URL`, `SOLAR_RPI_TOKEN`, `BMP_BATTERY_ADDRESS=0x76`, `BMP_OUTSIDE_ADDRESS=0x77` a `TELEMETRY_INTERVAL_SECONDS=60`.
+
+## Příprava relé přes GPIO
+
+Uploader používá BCM GPIO piny bez kolize se senzory:
+
+| Relé | BCM GPIO | Výchozí stav |
+|---|---:|---|
+| solar1 | 5 | vypnuto |
+| solar2 | 6 | vypnuto |
+| battery | 13 | vypnuto |
+| bufik | 16 | vypnuto |
+| fan12v | 19 | vypnuto |
+| fan24v | 20 | vypnuto |
+
+Piny vedou do vstupů relé modulu, ne přímo do výkonové zátěže. Relé modul musí mít společnou zem s Raspberry Pi a vhodné oddělení/napájení. Výchozí režim je aktivní LOW (`RELAY_ACTIVE_LOW=1`); pokud je modul aktivní HIGH, nastav `RELAY_ACTIVE_LOW=0`.
+
+Do `/home/ft-891/qso-blog.env` lze piny přepsat například:
+
+```bash
+RELAY_ACTIVE_LOW=1
+RELAY_POLL_INTERVAL_SECONDS=5
+RELAY_SOLAR1_GPIO=5
+RELAY_SOLAR2_GPIO=6
+RELAY_BATTERY_GPIO=13
+RELAY_BUFIK_GPIO=16
+RELAY_FAN12V_GPIO=19
+RELAY_FAN24V_GPIO=20
+```
+
+Po startu jsou všechna relé nastavena na vypnuto. RPi potom každých 5 sekund načítá potvrzený stav z `/api/solar/device` a fyzické výstupy podle něj nastaví. Při ukončení služby se relé opět vypnou.
