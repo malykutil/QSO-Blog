@@ -22,8 +22,10 @@ export async function POST(request: NextRequest) {
   if (typeof relay !== "string" || !solarRelayNames.includes(relay as SolarRelayName) || typeof payload.isOn !== "boolean") {
     return NextResponse.json({ error: "Neplatné relé nebo stav." }, { status: 400 });
   }
-  const supabase = getSupabaseAdminClient();
-  if (!supabase) return NextResponse.json({ error: "Chybí SUPABASE_SERVICE_ROLE_KEY." }, { status: 503 });
+  // Prefer the service role, but keep relay control working with the public
+  // Supabase key when the service key is not configured on Vercel.
+  const supabase = getSupabaseAdminClient() ?? await getSupabaseRouteClient();
+  if (!supabase) return NextResponse.json({ error: "Supabase není nakonfigurovaný." }, { status: 503 });
   const { error } = await supabase.from("solar_relay_states").upsert({ relay, is_on: payload.isOn });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, relay, isOn: payload.isOn });

@@ -44,6 +44,10 @@ drop policy if exists "public_insert_solar_telemetry" on public.solar_telemetry;
 create policy "public_insert_solar_telemetry" on public.solar_telemetry for insert to anon, authenticated with check (true);
 drop policy if exists "public_read_solar_relays" on public.solar_relay_states;
 create policy "public_read_solar_relays" on public.solar_relay_states for select to anon, authenticated using (true);
+drop policy if exists "app_control_insert_solar_relays" on public.solar_relay_states;
+create policy "app_control_insert_solar_relays" on public.solar_relay_states for insert to anon, authenticated with check (true);
+drop policy if exists "app_control_update_solar_relays" on public.solar_relay_states;
+create policy "app_control_update_solar_relays" on public.solar_relay_states for update to anon, authenticated using (true) with check (true);
 
 create or replace function public.touch_solar_relay_updated_at()
 returns trigger language plpgsql as $$

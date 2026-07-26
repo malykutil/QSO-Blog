@@ -100,8 +100,8 @@ export default function SolarPage() {
     const payload = await response.json().catch(() => null);
     setBusy(null);
     if (!response.ok) { setStatus(payload?.error ?? "Relé se nepodařilo přepnout."); return; }
-    setRelays((current) => ({ ...current, [relay]: !current[relay] }));
-    setStatus(`${relayLabels[relay]}: ${!relays[relay] ? "zapnuto" : "vypnuto"}.`);
+    await load();
+    setStatus(`${relayLabels[relay]}: ${payload.isOn ? "zapnuto" : "vypnuto"}.`);
   };
 
   return <AppShell><div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
