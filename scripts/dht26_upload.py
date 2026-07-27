@@ -16,11 +16,14 @@ API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("DHT_INTERVAL_SECONDS", "30")))
 DHT_READ_RETRIES = max(1, int(os.environ.get("DHT_READ_RETRIES", "3")))
+MAX_TEMPERATURE_STEP_C = max(0.5, float(os.environ.get("DHT_MAX_TEMPERATURE_STEP_C", "3")))
+MAX_HUMIDITY_STEP_PERCENT = max(1.0, float(os.environ.get("DHT_MAX_HUMIDITY_STEP_PERCENT", "15")))
 
 if not API_URL or not TOKEN:
     raise SystemExit("Nastav SOLAR_API_URL a SOLAR_RPI_TOKEN.")
 
 sensor = adafruit_dht.DHT11(board.D26)
+last_valid_reading = None
 
 
 def read_rpi_cpu_temperature():
@@ -42,6 +45,7 @@ def send(temperature: float, humidity: float) -> None:
 
 
 def read_dht11():
+    global last_valid_reading
     last_error = None
     for attempt in range(DHT_READ_RETRIES):
         try:
@@ -55,6 +59,13 @@ def read_dht11():
                 raise ValueError(f"DHT11 temperature out of range: {temperature}")
             if not math.isfinite(humidity) or not 0.0 <= humidity <= 100.0:
                 raise ValueError(f"DHT11 humidity out of range: {humidity}")
+            if last_valid_reading is not None:
+                previous_temperature, previous_humidity = last_valid_reading
+                if abs(temperature - previous_temperature) > MAX_TEMPERATURE_STEP_C:
+                    raise ValueError(f"DHT11 temperature jump: {previous_temperature} -> {temperature}")
+                if abs(humidity - previous_humidity) > MAX_HUMIDITY_STEP_PERCENT:
+                    raise ValueError(f"DHT11 humidity jump: {previous_humidity} -> {humidity}")
+            last_valid_reading = (temperature, humidity)
             return temperature, humidity
         except (RuntimeError, OSError, ValueError) as error:
             last_error = error
