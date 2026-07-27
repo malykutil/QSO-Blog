@@ -2,6 +2,7 @@
 """Read the DHT11 on BCM GPIO 26 and publish telemetry to the web."""
 
 import json
+import math
 import os
 from pathlib import Path
 import time
@@ -48,7 +49,13 @@ def read_dht11():
             humidity = sensor.humidity
             if temperature is None or humidity is None:
                 raise RuntimeError("DHT11 returned no data")
-            return float(temperature), float(humidity)
+            temperature = float(temperature)
+            humidity = float(humidity)
+            if not math.isfinite(temperature) or not -40.0 <= temperature <= 80.0:
+                raise ValueError(f"DHT11 temperature out of range: {temperature}")
+            if not math.isfinite(humidity) or not 0.0 <= humidity <= 100.0:
+                raise ValueError(f"DHT11 humidity out of range: {humidity}")
+            return temperature, humidity
         except (RuntimeError, OSError, ValueError) as error:
             last_error = error
             if attempt + 1 < DHT_READ_RETRIES:
