@@ -52,7 +52,9 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
   const visibleStart = Math.max(0, viewEnd - MAX_VISIBLE_POINTS);
   const visibleHistory = history.slice(visibleStart, viewEnd);
   const visibleSeries = series.filter(([key]) => activeKeys.includes(key));
-  const values = visibleSeries.flatMap(([key]) => history.map((item) => item[key] ?? 0));
+  const values = visibleSeries.flatMap(([key]) => history
+    .map((item) => item[key])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
   const max = Math.max(1, ...values);
   const min = Math.min(0, ...values);
   const span = Math.max(1, max - min);
@@ -60,11 +62,22 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     ? (index / (visibleHistory.length - 1)) * CHART_WIDTH
     : CHART_WIDTH / 2;
   const pointY = (key: NumericTelemetryKey, index: number) => CHART_HEIGHT
-    - (((visibleHistory[index][key] ?? 0) - min) / span) * plotHeight
+    - (((visibleHistory[index][key] as number) - min) / span) * plotHeight
     - CHART_PADDING;
-  const pathFor = (key: NumericTelemetryKey) => visibleHistory
-    .map((item, index) => `${index === 0 ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)}`)
-    .join(" ");
+  const pathFor = (key: NumericTelemetryKey) => {
+    let path = "";
+    let previousIndex: number | null = null;
+    visibleHistory.forEach((item, index) => {
+      const value = item[key];
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        previousIndex = null;
+        return;
+      }
+      path += `${previousIndex === null ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)} `;
+      previousIndex = index;
+    });
+    return path.trim();
+  };
   const spanHours = visibleHistory.length > 1
     ? (new Date(visibleHistory[visibleHistory.length - 1].recorded_at).getTime() - new Date(visibleHistory[0].recorded_at).getTime()) / 3600000
     : 0;
@@ -134,7 +147,7 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
           {visibleSeries.map(([key, , color]) => <path key={String(key)} d={pathFor(key)} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />)}
           {hoveredPoint && hoveredIndex !== null ? <>
             <line x1={pointX(hoveredIndex)} x2={pointX(hoveredIndex)} y1={CHART_PADDING} y2={CHART_HEIGHT - CHART_PADDING} stroke="#e2e8f0" strokeDasharray="4 5" />
-            {visibleSeries.map(([key, , color]) => <circle key={`point-${String(key)}`} cx={pointX(hoveredIndex)} cy={pointY(key, hoveredIndex)} r="5" fill={color} stroke="#f8fafc" strokeWidth="2" />)}
+            {visibleSeries.map(([key, , color]) => typeof hoveredPoint[key] === "number" && Number.isFinite(hoveredPoint[key]) ? <circle key={`point-${String(key)}`} cx={pointX(hoveredIndex)} cy={pointY(key, hoveredIndex)} r="5" fill={color} stroke="#f8fafc" strokeWidth="2" /> : null)}
             <g transform={`translate(${tooltipX} 18)`}>
               <rect width="218" height={34 + visibleSeries.length * 22} rx="10" fill="#f8fafc" stroke="#cbd5e1" />
               <text x="12" y="21" fill="#0f172a" fontSize="13" fontWeight="700">{formatDate(hoveredPoint.recorded_at, true)}</text>
