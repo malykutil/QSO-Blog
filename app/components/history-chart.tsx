@@ -70,7 +70,6 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     visibleHistory.forEach((item, index) => {
       const value = item[key];
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        previousIndex = null;
         return;
       }
       path += `${previousIndex === null ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)} `;
