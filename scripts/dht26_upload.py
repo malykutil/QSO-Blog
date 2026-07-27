@@ -14,6 +14,7 @@ import board
 API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("DHT_INTERVAL_SECONDS", "10")))
+DHT_READ_RETRIES = max(1, int(os.environ.get("DHT_READ_RETRIES", "3")))
 
 if not API_URL or not TOKEN:
     raise SystemExit("Nastav SOLAR_API_URL a SOLAR_RPI_TOKEN.")
@@ -38,14 +39,27 @@ def send(temperature: float, humidity: float) -> None:
         if response.status < 200 or response.status >= 300:
             raise RuntimeError(f"server returned HTTP {response.status}")
 
-try:
-    while True:
+
+def read_dht11():
+    last_error = None
+    for attempt in range(DHT_READ_RETRIES):
         try:
             temperature = sensor.temperature
             humidity = sensor.humidity
             if temperature is None or humidity is None:
                 raise RuntimeError("DHT11 returned no data")
-            send(float(temperature), float(humidity))
+            return float(temperature), float(humidity)
+        except (RuntimeError, OSError, ValueError) as error:
+            last_error = error
+            if attempt + 1 < DHT_READ_RETRIES:
+                time.sleep(2)
+    raise RuntimeError(f"DHT11 failed after {DHT_READ_RETRIES} attempts: {last_error}")
+
+try:
+    while True:
+        try:
+            temperature, humidity = read_dht11()
+            send(temperature, humidity)
             print(f"odesláno: {temperature:.1f} °C, {humidity:.0f} %", flush=True)
         except urllib.error.HTTPError as error:
             print(f"HTTP {error.code}: {error.read().decode('utf-8', errors='replace')}", flush=True)
