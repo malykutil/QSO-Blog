@@ -13,7 +13,7 @@ import board
 
 API_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/") + "/api/solar"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
-INTERVAL = max(10, int(os.environ.get("DHT_INTERVAL_SECONDS", "10")))
+INTERVAL = max(10, int(os.environ.get("DHT_INTERVAL_SECONDS", "30")))
 DHT_READ_RETRIES = max(1, int(os.environ.get("DHT_READ_RETRIES", "3")))
 
 if not API_URL or not TOKEN:

@@ -9,7 +9,7 @@ User=ft-891
 WorkingDirectory=/home/ft-891
 Environment=SOLAR_API_URL=https://DOPLN-DOMENU
 Environment=SOLAR_RPI_TOKEN=DOPLN_STEJNY_TOKEN_JAKO_NA_SERVERU
-Environment=DHT_INTERVAL_SECONDS=10
+Environment=DHT_INTERVAL_SECONDS=30
 ExecStart=/usr/bin/python3 /home/ft-891/dht26_upload.py
 Restart=always
 RestartSec=10
