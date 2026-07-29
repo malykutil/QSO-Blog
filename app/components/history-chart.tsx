@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 import type { SolarTelemetry } from "@/src/lib/solar-data";
 
 type NumericTelemetryKey = Exclude<keyof SolarTelemetry, "recorded_at">;
@@ -11,6 +11,12 @@ const CHART_WIDTH = 900;
 const CHART_HEIGHT = 290;
 const CHART_PADDING = 20;
 const MAX_VISIBLE_POINTS = 240;
+const OVERVIEW_POINTS = 180;
+
+function downsampleHistory(history: SolarTelemetry[], maxPoints: number) {
+  if (history.length <= maxPoints) return history;
+  return Array.from({ length: maxPoints }, (_, index) => history[Math.round((index / (maxPoints - 1)) * (history.length - 1))]);
+}
 
 function formatValue(value: number | null | undefined, unit: string) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)} ${unit}` : "—";
@@ -44,13 +50,10 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
   const [followLatest, setFollowLatest] = useState(true);
   const dragRef = useRef<DragState | null>(null);
 
-  useEffect(() => {
-    setViewEnd((current) => followLatest ? history.length : Math.min(history.length, Math.max(0, current)));
-    setHoveredIndex(null);
-  }, [history.length, followLatest]);
-
-  const visibleStart = Math.max(0, viewEnd - MAX_VISIBLE_POINTS);
-  const visibleHistory = history.slice(visibleStart, viewEnd);
+  const effectiveViewEnd = followLatest ? history.length : Math.min(history.length, Math.max(0, viewEnd));
+  const visibleStart = Math.max(0, effectiveViewEnd - MAX_VISIBLE_POINTS);
+  const visibleHistory = history.slice(visibleStart, effectiveViewEnd);
+  const overviewHistory = downsampleHistory(history, OVERVIEW_POINTS);
   const visibleSeries = series.filter(([key]) => activeKeys.includes(key));
   const values = visibleSeries.flatMap(([key]) => history
     .map((item) => item[key])
@@ -77,6 +80,21 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     });
     return path.trim();
   };
+  const overviewPathFor = (key: NumericTelemetryKey) => {
+    let path = "";
+    let previousIndex: number | null = null;
+    overviewHistory.forEach((item, index) => {
+      const value = item[key];
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      const x = overviewHistory.length > 1
+        ? (index / (overviewHistory.length - 1)) * CHART_WIDTH
+        : CHART_WIDTH / 2;
+      const y = 36 - (((value - min) / span) * 28);
+      path += `${previousIndex === null ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)} `;
+      previousIndex = index;
+    });
+    return path.trim();
+  };
   const spanHours = visibleHistory.length > 1
     ? (new Date(visibleHistory[visibleHistory.length - 1].recorded_at).getTime() - new Date(visibleHistory[0].recorded_at).getTime()) / 3600000
     : 0;
@@ -92,7 +110,7 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
   const handlePointerDown = (event: PointerEvent<SVGRectElement>) => {
     if (history.length <= MAX_VISIBLE_POINTS) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startEnd: viewEnd };
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startEnd: effectiveViewEnd };
     setFollowLatest(false);
     setHoveredIndex(null);
   };
@@ -161,6 +179,25 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
         <span className="self-center px-2 text-sm text-slate-400">{unit} · kliknutim skryjete krivku</span>
         {history.length > MAX_VISIBLE_POINTS ? <><span className="hidden text-sm text-slate-400 sm:inline">Tazenim grafu posunete cas</span><button type="button" onClick={() => { setViewEnd(history.length); setFollowLatest(true); setHoveredIndex(null); }} className="rounded-full bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">Nejnovejsi</button></> : null}
       </div>
+      {history.length > MAX_VISIBLE_POINTS ? <div className="mt-3 rounded-2xl bg-slate-100/80 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <span>Prehled celeho zvoleneho obdobi</span>
+          <span>{formatDate(history[0].recorded_at)} — {formatDate(history[history.length - 1].recorded_at)}</span>
+        </div>
+        <svg viewBox={`0 0 ${CHART_WIDTH} 44`} className="mt-1 h-10 w-full" role="img" aria-label="Prehled cele casove osy">
+          <path d={`M0 36H${CHART_WIDTH}`} stroke="#cbd5e1" strokeWidth="1" />
+          {visibleSeries.map(([key, , color]) => <path key={`overview-${String(key)}`} d={overviewPathFor(key)} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />)}
+          <rect
+            x={Math.max(0, (visibleStart / Math.max(1, history.length - 1)) * CHART_WIDTH)}
+            y="3"
+            width={Math.max(8, ((visibleHistory.length - 1) / Math.max(1, history.length - 1)) * CHART_WIDTH)}
+            height="36"
+            rx="4"
+            fill="#0f172a"
+            opacity=".12"
+          />
+        </svg>
+      </div> : null}
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {visibleSeries.map(([key, label, color]) => {
           const numbers = history.map((item) => item[key]).filter((item): item is number => typeof item === "number" && Number.isFinite(item));
