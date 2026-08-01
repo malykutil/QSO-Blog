@@ -435,6 +435,25 @@ html[data-theme="dark"] .solar-chip--active {
   background: var(--solar-control-hover);
 }
 
+.solar-alarm-reset {
+  min-height: 44px;
+  border-radius: 7px;
+  background: #991b1b;
+  padding: 0.65rem 0.9rem;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.solar-alarm-reset:hover:not(:disabled) {
+  background: #7f1d1d;
+}
+
+.solar-alarm-reset:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .solar-theme-button {
   min-width: 44px;
   min-height: 40px;

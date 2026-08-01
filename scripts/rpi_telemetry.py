@@ -36,6 +36,7 @@ MQ9_ALARM_ENABLED = os.environ.get("MQ9_ALARM_ENABLED", "1") == "1"
 MQ9_CRITICAL_RAW = max(1, int(os.environ.get("MQ9_CRITICAL_RAW", "833")))
 MQ9_ALARM_CONSECUTIVE_SAMPLES = max(1, int(os.environ.get("MQ9_ALARM_CONSECUTIVE_SAMPLES", "3")))
 MQ9_ALARM_LATCH_FILE = Path(os.environ.get("MQ9_ALARM_LATCH_FILE", "/home/ft-891/mq9-alarm-latched.json"))
+MQ9_ALARM_RESET_MARKER = -1
 RELAY_ACTIVE_LOW = os.environ.get("RELAY_ACTIVE_LOW", "1") == "1"
 RELAY_PINS = {
     "solar1": int(os.environ.get("RELAY_SOLAR1_GPIO", "5")),
@@ -226,6 +227,20 @@ def latch_mq9_alarm(raw_value):
     print(f"POPLACH MQ-9: RAW {raw_value:.0f}, vsechna rele nouzove vypnuta", flush=True)
 
 
+def clear_mq9_alarm():
+    global alarm_latched, alarm_trigger_raw, critical_sample_count
+    set_all_relays_off()
+    alarm_latched = False
+    alarm_trigger_raw = None
+    critical_sample_count = 0
+    try:
+        MQ9_ALARM_LATCH_FILE.unlink(missing_ok=True)
+    except OSError as error:
+        alarm_latched = True
+        raise RuntimeError(f"soubor alarmu nelze odstranit: {error}") from error
+    print("MQ-9 poplach potvrzen z webu; vsechna rele zustavaji vypnuta", flush=True)
+
+
 def check_mq9_alarm(nano_payload):
     global critical_sample_count
     if not MQ9_ALARM_ENABLED or alarm_latched:
@@ -246,21 +261,33 @@ def check_mq9_alarm(nano_payload):
         critical_sample_count = 0
 
 
-def fetch_relay_states():
-    if alarm_latched:
-        set_all_relays_off()
-        send_emergency_stop()
-        return {name: False for name in RELAY_PINS}
+def fetch_relay_states(nano_payload):
     request = urllib.request.Request(DEVICE_API_URL, headers={
         "Authorization": f"Bearer {TOKEN}",
         "User-Agent": "qso-blog-rpi-relay/1.0",
     }, method="GET")
     with urllib.request.urlopen(request, timeout=10) as response:
         payload = json.loads(response.read().decode("utf-8"))
+    telemetry = payload.get("telemetry") or {}
+    reset_requested = (
+        telemetry.get("mq9_alarm") is False
+        and payload_number(telemetry, "mq9_alarm_trigger_raw") == MQ9_ALARM_RESET_MARKER
+    )
+    if alarm_latched:
+        current_raw = payload_number(nano_payload or {}, "mq9_raw")
+        if reset_requested and current_raw is not None and current_raw < MQ9_CRITICAL_RAW:
+            clear_mq9_alarm()
+            return {name: False for name in RELAY_PINS}, True
+        set_all_relays_off()
+        if reset_requested:
+            measured = "nedostupna" if current_raw is None else f"RAW {current_raw:.0f}"
+            print(f"MQ-9 reset odmitnut, aktualni hodnota je {measured}", flush=True)
+        send_emergency_stop()
+        return {name: False for name in RELAY_PINS}, False
     for name, is_on in payload.get("relays", {}).items():
         if name in RELAY_PINS and isinstance(is_on, bool) and relay_states[name] != is_on:
             apply_relay(name, is_on)
-    return payload.get("relays", {})
+    return payload.get("relays", {}), False
 
 
 def payload_number(payload, key):
@@ -341,8 +368,10 @@ try:
         now = time.monotonic()
         if now >= next_relay_poll:
             try:
-                states = fetch_relay_states()
+                states, alarm_reset = fetch_relay_states(latest_nano_payload)
                 print("rele: " + json.dumps(states, ensure_ascii=False), flush=True)
+                if alarm_reset:
+                    next_telemetry = 0.0
             except (RuntimeError, urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
                 print(f"chyba stavu rele: {error}", flush=True)
             next_relay_poll = now + RELAY_POLL_INTERVAL

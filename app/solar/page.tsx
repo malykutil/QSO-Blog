@@ -29,6 +29,7 @@ type SolarPayload = {
   relayUpdatedAt: Partial<Record<SolarRelayName, string>>;
   canControl: boolean;
   alarmActive: boolean;
+  alarmResetPending: boolean;
 };
 
 const emptySummary: SolarEnergySummary = {
@@ -58,6 +59,7 @@ function normalizePayload(payload: SolarPayload): SolarPayload {
     relayUpdatedAt: payload.relayUpdatedAt ?? {},
     energySummary: payload.energySummary ?? emptySummary,
     alarmActive: Boolean(payload.alarmActive),
+    alarmResetPending: Boolean(payload.alarmResetPending),
     canControl: Boolean(payload.canControl),
   };
 }
@@ -85,6 +87,8 @@ export default function SolarPage() {
   const [relayErrors, setRelayErrors] = useState<Partial<Record<SolarRelayName, string>>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<{ relay: SolarRelayName; desiredState: boolean } | null>(null);
+  const [alarmResetBusy, setAlarmResetBusy] = useState(false);
+  const [alarmResetError, setAlarmResetError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -188,6 +192,25 @@ export default function SolarPage() {
     void executeRelayCommand(relay, desiredState);
   };
 
+  const requestAlarmReset = async () => {
+    if (!payload?.canControl || !fireAlarmActive || payload.alarmResetPending || alarmResetBusy) return;
+    if (!window.confirm("Potvrď, že byl objekt fyzicky zkontrolován a nehrozí požár ani únik plynu. Všechna relé zůstanou vypnutá.")) return;
+    setAlarmResetBusy(true);
+    setAlarmResetError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/solar/alarm", { method: "POST" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Server vypnutí poplachu nepotvrdil.");
+      setPayload((current) => current ? { ...current, alarmActive: true, alarmResetPending: true } : current);
+      setNotice("Požadavek byl odeslán do RPi. Relé zůstávají vypnutá; stav se automaticky obnoví po potvrzení RPi.");
+    } catch (resetError) {
+      setAlarmResetError(resetError instanceof Error ? resetError.message : "Poplach se nepodařilo vypnout.");
+    } finally {
+      setAlarmResetBusy(false);
+    }
+  };
+
   return <AppShell compactMobile>
     <div className="solar-app mx-auto w-full max-w-[1500px]">
       <header className="solar-header">
@@ -210,7 +233,7 @@ export default function SolarPage() {
         <SolarPanel id="zarizeni" title="Ovládání zařízení" eyebrow={`${activeRelays.length} z 6 požadavků zapnuto`}>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-3xl text-sm leading-6 text-[var(--solar-muted)]">Příkaz se zapíše pouze přes zabezpečené serverové API a UI následně ověří stav uložený v databázi. Samostatná fyzická zpětná vazba relé zatím není dostupná.</p>{!payload?.canControl ? <a href="/login" className="solar-link">Přihlásit pro ovládání</a> : null}</div>
           {freshness !== "online" ? <p className="solar-alert solar-alert--warning mt-4">Ovládání je zablokováno, protože telemetrie není aktuální.</p> : null}
-          {fireAlarmActive ? <p className="solar-alert solar-alert--danger mt-4">Ovládání je zablokováno aktivním MQ-9 poplachem.</p> : null}
+          {fireAlarmActive ? <div className="solar-alert solar-alert--danger mt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong>Ovládání je zablokováno aktivním MQ-9 poplachem.</strong><p className="mt-1">Reset proveď až po fyzické kontrole objektu. Relé zůstanou vypnutá.</p></div>{payload?.canControl ? <button type="button" className="solar-alarm-reset" disabled={alarmResetBusy || payload.alarmResetPending || freshness !== "online"} onClick={() => void requestAlarmReset()}>{payload.alarmResetPending ? "Čekám na RPi…" : alarmResetBusy ? "Odesílám…" : "Potvrdit a vypnout poplach"}</button> : <a href="/login" className="solar-link">Přihlásit pro vypnutí</a>}</div>{alarmResetError ? <p className="mt-3 font-semibold">{alarmResetError}</p> : null}</div> : null}
           <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">{(Object.keys(defaultSolarRelayState) as SolarRelayName[]).map((relay) => <RelayCard key={relay} relay={relay} requestedState={payload?.relays[relay] ?? false} updatedAt={payload?.relayUpdatedAt[relay]} disabled={!payload?.canControl || freshness !== "online" || busyRelay !== null || fireAlarmActive} busy={busyRelay === relay} error={relayErrors[relay]} onToggle={requestRelayCommand} />)}</div>
         </SolarPanel>
 

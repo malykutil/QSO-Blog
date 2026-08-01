@@ -6,6 +6,7 @@ import { hasSolarControlSession } from "@/src/lib/solar-auth";
 import { defaultSolarRelayState, solarExtendedTelemetryFields, solarTelemetryFields, type SolarTelemetry } from "@/src/lib/solar-data";
 import { analyzeSolarEnergy, enrichSolarTelemetry } from "@/src/lib/solar-energy";
 import { isMq9Critical } from "@/src/lib/mq9-air-quality";
+import { isMq9AlarmResetMarker } from "@/src/lib/mq9-alarm";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,10 @@ export async function GET(request: NextRequest) {
   const rangeAnalysis = analyzeSolarEnergy(history as unknown as SolarTelemetry[]);
   const todayAnalysis = analyzeSolarEnergy(todayHistory as unknown as SolarTelemetry[]);
   const enrichedTelemetry = telemetry ? enrichSolarTelemetry(telemetry as unknown as SolarTelemetry) : null;
+  const alarmResetPending = isMq9AlarmResetMarker(
+    telemetry?.mq9_alarm as boolean | null | undefined,
+    telemetry?.mq9_alarm_trigger_raw as number | null | undefined,
+  );
   const relayState = { ...defaultSolarRelayState };
   for (const row of relaysResult.data ?? []) if (row.relay in relayState) relayState[row.relay as keyof typeof relayState] = Boolean(row.is_on);
   return NextResponse.json(
@@ -144,7 +149,8 @@ export async function GET(request: NextRequest) {
       history: rangeAnalysis.history,
       energySummary: todayAnalysis.summary,
       relays: relayState,
-      alarmActive: Boolean(telemetry?.mq9_alarm) || isMq9Critical(telemetry?.mq9_raw as number | null | undefined),
+      alarmActive: alarmResetPending || Boolean(telemetry?.mq9_alarm) || isMq9Critical(telemetry?.mq9_raw as number | null | undefined),
+      alarmResetPending,
       relayUpdatedAt: Object.fromEntries((relaysResult.data ?? []).map((row) => [row.relay, row.updated_at])),
       canControl: await canManageSolar(),
     },

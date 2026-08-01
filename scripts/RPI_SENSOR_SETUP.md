@@ -77,7 +77,11 @@ vypnou, stejný nouzový stav se odešle na server a alarm se uloží do
 `/home/ft-891/mq9-alarm-latched.json`. Výpadek internetu ani restart služby
 alarm nezruší.
 
-Alarm je možné resetovat pouze po fyzické kontrole objektu:
+Po fyzické kontrole objektu lze alarm potvrdit na webu `/solar`. Tlačítko je
+dostupné pouze po přihlášení. RPi příkaz přijme jen s čerstvými daty a když
+aktuální MQ-9 hodnota už není kritická. Reset ponechá všechna relé vypnutá.
+
+Nouzový ruční reset na RPi:
 
 ```bash
 sudo systemctl stop rpi-telemetry

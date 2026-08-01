@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
 
   const [telemetryResult, relaysResult] = await Promise.all([
-    supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("solar_telemetry").select(`${solarTelemetryFields},mq9_alarm,mq9_alarm_trigger_raw`).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("solar_relay_states").select("relay,is_on").order("relay"),
   ]);
   if (telemetryResult.error) return NextResponse.json({ error: telemetryResult.error.message }, { status: 500 });
