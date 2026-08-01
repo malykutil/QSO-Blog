@@ -281,7 +281,6 @@ def read_sensors(nano_payload):
     object_temperature, object_humidity = dht_room.read() if dht_room else (None, None)
     mppt_temperature, _mppt_humidity = dht_mppt.read() if dht_mppt else (None, None)
     acs3_current = payload_number(nano_payload, "acs3_current")
-    ina_current = payload_number(nano_payload, "ina219_current")
     return {
         "arduino_uptime_ms": payload_number(nano_payload, "uptime_ms"),
         "rpi_cpu_temperature": read_rpi_cpu_temperature(),
@@ -293,12 +292,13 @@ def read_sensors(nano_payload):
         "outside_pressure": payload_number(nano_payload, "outside_pressure"),
         "battery_pressure": payload_number(nano_payload, "battery_pressure"),
         "battery_voltage": payload_number(nano_payload, "ina219_bus_voltage"),
-        "ina219_current": ina_current,
-        "ina219_power": payload_number(nano_payload, "ina219_power"),
-        "ina219_shunt_voltage_mv": payload_number(nano_payload, "ina219_shunt_voltage_mv"),
+        # INA219 je v teto instalaci pouze voltmetr; proud meri ACS712.
+        "ina219_current": None,
+        "ina219_power": None,
+        "ina219_shunt_voltage_mv": None,
         "solar1_current": payload_number(nano_payload, "acs1_current"),
         "solar2_current": payload_number(nano_payload, "acs2_current"),
-        "battery_current": acs3_current if acs3_current is not None else ina_current,
+        "battery_current": acs3_current,
         "acs1_raw": payload_number(nano_payload, "acs1_raw"),
         "acs1_voltage": payload_number(nano_payload, "acs1_voltage"),
         "acs2_raw": payload_number(nano_payload, "acs2_raw"),

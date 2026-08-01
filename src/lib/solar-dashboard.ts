@@ -2,6 +2,7 @@ import type { SolarEnergyPoint, SolarRelayName, TelemetryFreshness } from "@/src
 import { getMq9AirQuality } from "@/src/lib/mq9-air-quality";
 
 export const SOLAR_ALERT_THRESHOLDS = {
+  batteryDisconnectedVoltageV: 0.5,
   batteryLowVoltageV: 11.8,
   batteryHighTemperatureC: 50,
   batteryChargingMinTemperatureC: 0,
@@ -87,7 +88,14 @@ export function buildSolarAlerts({
   }
 
   const batteryVoltage = finite(telemetry?.battery_voltage);
-  if (batteryVoltage !== null && batteryVoltage < SOLAR_ALERT_THRESHOLDS.batteryLowVoltageV) {
+  if (batteryVoltage !== null && batteryVoltage <= SOLAR_ALERT_THRESHOLDS.batteryDisconnectedVoltageV) {
+    alerts.push({
+      id: "battery-disconnected",
+      level: "info",
+      title: "Bateriový vstup je odpojený",
+      detail: "INA219 neměří připojené napětí; zobrazuje se 0 V.",
+    });
+  } else if (batteryVoltage !== null && batteryVoltage < SOLAR_ALERT_THRESHOLDS.batteryLowVoltageV) {
     alerts.push({
       id: "battery-low",
       level: "critical",

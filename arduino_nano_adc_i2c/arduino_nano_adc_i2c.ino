@@ -16,10 +16,14 @@ constexpr unsigned long SENSOR_RETRY_INTERVAL_MS = 30000;
 constexpr uint8_t ANALOG_SAMPLES = 32;
 constexpr uint8_t MAX_I2C_DEVICES = 8;
 
-// Vychozi hodnoty pro ACS712-20A napajeny 5 V. Pro ACS712-5A pouzij 185,
-// pro ACS712-30A 66. Zvlaste lze doladit nulovy bod kazdeho kanalu.
-constexpr float ACS_ZERO_MV[] = {2500.0F, 2500.0F, 2500.0F};
+// Nulove body zmerene 2026-08-01 pri odpojenych proudech (30 vzorku).
+// Pro ACS712-5A pouzij citlivost 185, pro ACS712-30A 66 mV/A.
+constexpr float ACS_ZERO_MV[] = {2490.39F, 2456.83F, 2506.68F};
 constexpr float ACS_SENSITIVITY_MV_PER_A[] = {100.0F, 100.0F, 100.0F};
+constexpr float ACS_ZERO_DEADBAND_A = 0.10F;
+// Odpojeny INA219 v teto instalaci vraci priblizne 1 V. Protoze se pouziva
+// pouze jako voltmetr, hodnoty do teto meze zverejnime jako nulu.
+constexpr float INA_DISCONNECTED_MAX_V = 1.10F;
 constexpr float ADC_REFERENCE_MV = 5000.0F;
 
 Adafruit_BMP280 bmpBattery;
@@ -48,7 +52,8 @@ float rawToMillivolts(uint16_t raw) {
 }
 
 float acsCurrent(uint8_t channel, float millivolts) {
-  return (millivolts - ACS_ZERO_MV[channel]) / ACS_SENSITIVITY_MV_PER_A[channel];
+  const float current = (millivolts - ACS_ZERO_MV[channel]) / ACS_SENSITIVITY_MV_PER_A[channel];
+  return fabs(current) <= ACS_ZERO_DEADBAND_A ? 0.0F : current;
 }
 
 void printFloatOrNull(float value, uint8_t digits) {
@@ -100,10 +105,14 @@ void emitTelemetry() {
   const float batteryPressure = bmpBatteryReady ? bmpBattery.readPressure() / 100.0F : NAN;
   const float outsideTemperature = bmpOutsideReady ? bmpOutside.readTemperature() : NAN;
   const float outsidePressure = bmpOutsideReady ? bmpOutside.readPressure() / 100.0F : NAN;
-  const float inaBusVoltage = ina219Ready ? ina219.getBusVoltage_V() : NAN;
-  const float inaShuntVoltage = ina219Ready ? ina219.getShuntVoltage_mV() : NAN;
-  const float inaCurrent = ina219Ready ? ina219.getCurrent_mA() / 1000.0F : NAN;
-  const float inaPower = ina219Ready ? ina219.getPower_mW() / 1000.0F : NAN;
+  float inaBusVoltage = ina219Ready ? ina219.getBusVoltage_V() : NAN;
+  if (!isnan(inaBusVoltage) && inaBusVoltage <= INA_DISCONNECTED_MAX_V) {
+    inaBusVoltage = 0.0F;
+  }
+  // INA219 zde slouzi pouze jako voltmetr. Proud a vykon meri ACS712.
+  const float inaShuntVoltage = NAN;
+  const float inaCurrent = NAN;
+  const float inaPower = NAN;
 
   Serial.print(F("{\"type\":\"qso_telemetry\",\"version\":1,\"uptime_ms\":"));
   Serial.print(millis());

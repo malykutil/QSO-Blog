@@ -22,9 +22,15 @@ Všechna čidla musí mít společnou zem. Dva BMP280 musí mít rozdílné adre
 připojuj podle napěťových požadavků konkrétních modulů. Samotný čip BMP280 i
 INA219 je 3,3V, některé breakout moduly však mají regulátor a převod úrovní.
 
-Výchozí kalibrace počítá s ACS712-20A (100 mV/A, nula 2,5 V). Konstanty
-`ACS_ZERO_MV` a `ACS_SENSITIVITY_MV_PER_A` ve firmware uprav podle typu a
-naměřeného nulového bodu každého modulu.
+Kalibrace počítá s ACS712-20A (100 mV/A). Nulové body tří instalovaných modulů
+byly změřeny při odpojených vstupech a každý kanál má samostatnou hodnotu
+`ACS_ZERO_MV`. Proud v pásmu ±0,10 A se zobrazuje jako nula, aby se neukazoval
+šum převodníku.
+
+INA219 se v této instalaci používá pouze jako voltmetr. Jeho proud, napětí na
+bočníku a výkon se neposílají jako platná měření. Odpojený modul vrací přibližně
+1 V, proto firmware hodnotu do 1,10 V vyhodnotí jako odpojený vstup a odešle
+`0 V`. Vyšší napětí se nijak neposouvá ani nepřepočítává.
 
 ## Sestavení a nahrání
 
