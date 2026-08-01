@@ -43,6 +43,7 @@ export type SolarTelemetry = {
 };
 
 export type BatteryFlowState = "charging" | "discharging" | "idle" | "unknown";
+export type UpsFlowState = "charging" | "discharging" | "idle" | "unknown";
 export type TelemetryFreshness = "online" | "delayed" | "offline";
 
 export type SolarEnergyPoint = SolarTelemetry & {
@@ -50,6 +51,11 @@ export type SolarEnergyPoint = SolarTelemetry & {
   solar_total_power_w: number | null;
   battery_power_w: number | null;
   battery_state: BatteryFlowState;
+  ups_voltage_v: number | null;
+  ups_current_a: number | null;
+  ups_power_w: number | null;
+  ups_charge_percent: number | null;
+  ups_state: UpsFlowState;
   energy_charged_wh: number;
   energy_discharged_wh: number;
   energy_balance_wh: number;

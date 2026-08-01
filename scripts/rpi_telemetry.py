@@ -14,6 +14,7 @@ import adafruit_dht
 import board
 import lgpio
 import serial
+import smbus
 from serial.tools import list_ports
 
 BASE_URL = os.environ.get("SOLAR_API_URL", "").rstrip("/")
@@ -38,6 +39,9 @@ MQ9_ALARM_CONSECUTIVE_SAMPLES = max(1, int(os.environ.get("MQ9_ALARM_CONSECUTIVE
 MQ9_ALARM_LATCH_FILE = Path(os.environ.get("MQ9_ALARM_LATCH_FILE", "/home/ft-891/mq9-alarm-latched.json"))
 MQ9_ALARM_RESET_MARKER = -1
 RELAY_ACTIVE_LOW = os.environ.get("RELAY_ACTIVE_LOW", "1") == "1"
+UPS_HAT_ENABLED = os.environ.get("UPS_HAT_ENABLED", "1") == "1"
+UPS_HAT_I2C_BUS = int(os.environ.get("UPS_HAT_I2C_BUS", "1"))
+UPS_HAT_I2C_ADDRESS = int(os.environ.get("UPS_HAT_I2C_ADDRESS", "0x42"), 0)
 RELAY_PINS = {
     "solar1": int(os.environ.get("RELAY_SOLAR1_GPIO", "5")),
     "solar2": int(os.environ.get("RELAY_SOLAR2_GPIO", "6")),
@@ -163,8 +167,67 @@ class Dht11Reader:
         self.sensor.exit()
 
 
+class UpsHatReader:
+    CONFIG_REGISTER = 0x00
+    SHUNT_VOLTAGE_REGISTER = 0x01
+    BUS_VOLTAGE_REGISTER = 0x02
+    CURRENT_REGISTER = 0x04
+    CALIBRATION_REGISTER = 0x05
+    CONFIG_32V_2A = 0x399F
+    CALIBRATION_32V_2A = 4096
+    CURRENT_LSB_MA = 0.1
+
+    def __init__(self, bus_number, address):
+        self.bus = smbus.SMBus(bus_number)
+        self.address = address
+        self._configure()
+
+    @staticmethod
+    def _swap(value):
+        return ((value & 0xFF) << 8) | ((value >> 8) & 0xFF)
+
+    @staticmethod
+    def _signed(value):
+        return value - 65536 if value > 32767 else value
+
+    def _write(self, register, value):
+        self.bus.write_word_data(self.address, register, self._swap(value))
+
+    def _read(self, register):
+        return self._swap(self.bus.read_word_data(self.address, register))
+
+    def _configure(self):
+        self._write(self.CONFIG_REGISTER, self.CONFIG_32V_2A)
+        self._write(self.CALIBRATION_REGISTER, self.CALIBRATION_32V_2A)
+
+    def read(self):
+        self._configure()
+        voltages = []
+        currents = []
+        for _sample in range(8):
+            bus_voltage = (self._read(self.BUS_VOLTAGE_REGISTER) >> 3) * 0.004
+            shunt_mv = self._signed(self._read(self.SHUNT_VOLTAGE_REGISTER)) * 0.01
+            current_a = self._signed(self._read(self.CURRENT_REGISTER)) * self.CURRENT_LSB_MA / 1000.0
+            voltages.append(bus_voltage + shunt_mv / 1000.0)
+            currents.append(current_a)
+            time.sleep(0.05)
+        voltage = sum(voltages) / len(voltages)
+        current = sum(currents) / len(currents)
+        percent = max(0.0, min(100.0, (voltage - 6.0) / 2.4 * 100.0))
+        return {
+            "voltage": round(voltage, 3),
+            "current": round(current, 4),
+            "power": round(voltage * current, 3),
+            "percent": round(percent, 1),
+        }
+
+    def close(self):
+        self.bus.close()
+
+
 dht_room = optional_device(lambda: Dht11Reader(DHT_GPIO, f"DHT11 chata GPIO{DHT_GPIO}"), "DHT11 chata") if DHT_ENABLED else None
 dht_mppt = optional_device(lambda: Dht11Reader(DHT_MPPT_GPIO, f"DHT11 MPPT GPIO{DHT_MPPT_GPIO}"), "DHT11 MPPT") if DHT_MPPT_ENABLED else None
+ups_hat = optional_device(lambda: UpsHatReader(UPS_HAT_I2C_BUS, UPS_HAT_I2C_ADDRESS), "Waveshare UPS HAT") if UPS_HAT_ENABLED else None
 nano = NanoTelemetry()
 gpio_handle = lgpio.gpiochip_open(0)
 relay_states = {name: False for name in RELAY_PINS}
@@ -308,6 +371,7 @@ def read_sensors(nano_payload):
     object_temperature, object_humidity = dht_room.read() if dht_room else (None, None)
     mppt_temperature, _mppt_humidity = dht_mppt.read() if dht_mppt else (None, None)
     acs3_current = payload_number(nano_payload, "acs3_current")
+    ups = ups_hat.read() if ups_hat else {}
     return {
         "arduino_uptime_ms": payload_number(nano_payload, "uptime_ms"),
         "rpi_cpu_temperature": read_rpi_cpu_temperature(),
@@ -319,10 +383,11 @@ def read_sensors(nano_payload):
         "outside_pressure": payload_number(nano_payload, "outside_pressure"),
         "battery_pressure": payload_number(nano_payload, "battery_pressure"),
         "battery_voltage": payload_number(nano_payload, "ina219_bus_voltage"),
-        # INA219 je v teto instalaci pouze voltmetr; proud meri ACS712.
-        "ina219_current": None,
-        "ina219_power": None,
-        "ina219_shunt_voltage_mv": None,
+        # Tato tri existujici databazova pole prenaseji INA219 z Waveshare UPS
+        # HAT na RPi: proud, podepsany vykon a napeti UPS baterioveho packu.
+        "ina219_current": ups.get("current"),
+        "ina219_power": ups.get("power"),
+        "ina219_shunt_voltage_mv": ups.get("voltage"),
         "solar1_current": payload_number(nano_payload, "acs1_current"),
         "solar2_current": payload_number(nano_payload, "acs2_current"),
         "battery_current": acs3_current,
@@ -395,4 +460,6 @@ finally:
         dht_room.close()
     if dht_mppt:
         dht_mppt.close()
+    if ups_hat:
+        ups_hat.close()
     nano.close()

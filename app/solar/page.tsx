@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/app/components/app-shell";
-import { DailySummary, BatteryStatus, EnergyFlow, OverviewMetrics, SensorGrid } from "@/app/components/solar-energy-overview";
+import { DailySummary, BatteryStatus, EnergyFlow, OverviewMetrics, SensorGrid, UpsStatus } from "@/app/components/solar-energy-overview";
 import { EventTimeline } from "@/app/components/solar-event-timeline";
 import { SolarHistoryControls, type HistoryRange } from "@/app/components/solar-history-controls";
 import { RelayCard, RelayConfirmationDialog } from "@/app/components/solar-relay-card";
@@ -229,6 +229,8 @@ export default function SolarPage() {
 
       <main className="mt-4 grid gap-4">
         <section id="tok" className="grid scroll-mt-24 gap-4 xl:grid-cols-[1.35fr_.65fr]"><EnergyFlow telemetry={telemetry} /><BatteryStatus telemetry={telemetry} /></section>
+
+        <UpsStatus telemetry={telemetry} />
 
         <SolarPanel id="zarizeni" title="Ovládání zařízení" eyebrow={`${activeRelays.length} z 6 požadavků zapnuto`}>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-3xl text-sm leading-6 text-[var(--solar-muted)]">Příkaz se zapíše pouze přes zabezpečené serverové API a UI následně ověří stav uložený v databázi. Samostatná fyzická zpětná vazba relé zatím není dostupná.</p>{!payload?.canControl ? <a href="/login" className="solar-link">Přihlásit pro ovládání</a> : null}</div>

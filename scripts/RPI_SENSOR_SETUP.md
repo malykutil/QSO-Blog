@@ -93,6 +93,14 @@ MQ-9 reaguje na CO a hořlavé plyny, ale nejde o certifikovaný kouřový nebo
 požární hlásič. Tato automatika je pouze doplňková ochrana. V objektu musí být
 samostatný certifikovaný kouřový a CO hlásič s vlastní sirénou a napájením.
 
+## Waveshare UPS HAT
+
+UPS HAT 18306 je na I²C sběrnici RPi na adrese `0x42`. Služba čte napětí a
+proud z INA219. Kladný proud znamená nabíjení, záporný vybíjení. Zbývající
+kapacita je orientační lineární odhad výrobce pro dvoučlánkový 18650 pack:
+`(napětí - 6,0 V) / 2,4 V × 100`, omezený na 0–100 %. Nejde o údaj z BMS ani
+coulomb counteru, proto se může zejména při nabíjení krátkodobě měnit.
+
 ## Příprava relé přes GPIO
 
 Uploader používá BCM GPIO piny bez kolize se senzory:

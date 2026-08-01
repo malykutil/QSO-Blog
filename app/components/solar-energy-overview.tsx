@@ -48,6 +48,13 @@ const batteryStateLabels = {
   unknown: "Neznámý stav",
 } as const;
 
+const upsStateLabels = {
+  charging: "Nabíjí se",
+  discharging: "Vybíjí se",
+  idle: "Klid / plně nabito",
+  unknown: "Nedostupné",
+} as const;
+
 export function OverviewMetrics({
   telemetry,
   freshness,
@@ -90,7 +97,7 @@ export function OverviewMetrics({
       stale={stale}
     />
     <MetricCard label="Stav baterie" value={batteryStateLabels[batteryState]} detail={`Výkon baterie ${signedValue(telemetry?.battery_power_w)} W`} icon="battery" tone={batteryState === "charging" ? "positive" : batteryState === "discharging" ? "warning" : "neutral"} stale={stale} />
-    <MetricCard label="Nabití baterie" value="N/A" detail="Procento nelze bez napěťové křivky nebo BMS spolehlivě určit" icon="battery" stale={stale} />
+    <MetricCard label="UPS Raspberry Pi" value={numberValue(telemetry?.ups_charge_percent, 0)} unit={finite(telemetry?.ups_charge_percent) === null ? undefined : "%"} detail={`${upsStateLabels[telemetry?.ups_state ?? "unknown"]} · ${numberValue(telemetry?.ups_voltage_v, 2)} V`} icon="battery" tone={telemetry?.ups_state === "charging" ? "positive" : telemetry?.ups_state === "discharging" ? "warning" : "neutral"} stale={stale} />
     <MetricCard label="Řídicí jednotka" value={systemLabel} detail={`CPU ${numberValue(telemetry?.rpi_cpu_temperature)} °C · ${formatAge(telemetry?.recorded_at, now)}`} icon="system" tone={freshness === "online" ? "positive" : freshness === "delayed" ? "warning" : "negative"} />
     <MetricCard label="Poslední data" value={formatTime(telemetry?.recorded_at)} detail={formatAge(telemetry?.recorded_at, now)} icon="clock" tone={freshness === "online" ? "info" : "negative"} />
   </section>;
@@ -128,6 +135,25 @@ export function BatteryStatus({ telemetry }: { telemetry: SolarEnergyPoint | nul
       <SensorValue label="Teplota" value={numberValue(telemetry?.battery_temperature, 1)} unit="°C" />
     </div>
     <div className="solar-battery-unknown mt-4"><span>Stav nabití</span><strong>N/A</strong><small>Vyžaduje data z BMS nebo kalibrovanou napěťovou křivku.</small></div>
+  </SolarPanel>;
+}
+
+export function UpsStatus({ telemetry }: { telemetry: SolarEnergyPoint | null }) {
+  const state = telemetry?.ups_state ?? "unknown";
+  const percent = finite(telemetry?.ups_charge_percent);
+  const tone = state === "charging" ? "text-emerald-700" : state === "discharging" ? "text-amber-700" : "text-[var(--solar-text)]";
+  return <SolarPanel title="Záložní napájení Raspberry Pi" eyebrow="Waveshare UPS HAT · I²C 0x42">
+    <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+      <div><p className="text-sm text-[var(--solar-muted)]">Stav UPS</p><strong className={`mt-1 block text-2xl ${tone}`}>{upsStateLabels[state]}</strong></div>
+      <div className="text-right"><p className="text-sm text-[var(--solar-muted)]">Zbývající kapacita</p><strong className="font-mono text-4xl text-[var(--solar-text)]">{numberValue(percent, 0)}{percent === null ? "" : " %"}</strong></div>
+    </div>
+    <div className="solar-ups-level mt-4" role="progressbar" aria-label="Nabití UPS" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : Math.round(percent)}><span style={{ width: `${percent ?? 0}%` }} /></div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <SensorValue label="Napětí packu" value={numberValue(telemetry?.ups_voltage_v, 3)} unit="V" />
+      <SensorValue label="Proud" value={signedValue(telemetry?.ups_current_a, 3)} unit="A" />
+      <SensorValue label="Výkon" value={signedValue(telemetry?.ups_power_w, 2)} unit="W" />
+    </div>
+    <p className="mt-4 text-xs leading-5 text-[var(--solar-muted)]">Kladný proud znamená nabíjení, záporný vybíjení. Procenta jsou orientační odhad z napětí dvoučlánkového 18650 packu, nikoli údaj z coulomb counteru.</p>
   </SolarPanel>;
 }
 

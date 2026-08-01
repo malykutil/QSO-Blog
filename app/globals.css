@@ -837,6 +837,22 @@ html[data-theme="dark"] .solar-alert--info {
 .solar-battery-unknown small,
 .solar-summary-item p { display: block; margin-top: 0.35rem; color: var(--solar-muted); font-size: 0.68rem; line-height: 1rem; }
 
+.solar-ups-level {
+  height: 0.8rem;
+  overflow: hidden;
+  border: 1px solid var(--solar-border);
+  border-radius: 999px;
+  background: var(--solar-panel-subtle);
+}
+
+.solar-ups-level span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d97706 0%, #22a06b 55%, #16835a 100%);
+  transition: width 300ms ease;
+}
+
 .solar-device-card {
   min-width: 0;
   border: 1px solid var(--solar-border);

@@ -4,6 +4,7 @@ import type {
   SolarEnergyPoint,
   SolarTelemetry,
   TelemetryFreshness,
+  UpsFlowState,
 } from "@/src/lib/solar-data";
 
 export const SOLAR_MEASUREMENT_CONFIG = {
@@ -12,7 +13,22 @@ export const SOLAR_MEASUREMENT_CONFIG = {
   maxIntegrationGapMs: 5 * 60 * 1000,
   onlineAgeMs: 90 * 1000,
   delayedAgeMs: 5 * 60 * 1000,
+  upsCurrentDeadbandA: 0.01,
 } as const;
+
+export function calculateUpsChargePercent(voltage: number | null | undefined) {
+  const safeVoltage = finite(voltage);
+  if (safeVoltage === null) return null;
+  return Math.max(0, Math.min(100, ((safeVoltage - 6) / 2.4) * 100));
+}
+
+export function getUpsFlowState(current: number | null | undefined): UpsFlowState {
+  const safeCurrent = finite(current);
+  if (safeCurrent === null) return "unknown";
+  if (safeCurrent > SOLAR_MEASUREMENT_CONFIG.upsCurrentDeadbandA) return "charging";
+  if (safeCurrent < -SOLAR_MEASUREMENT_CONFIG.upsCurrentDeadbandA) return "discharging";
+  return "idle";
+}
 
 function finite(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -71,12 +87,21 @@ export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
   const solarTotalCurrent = calculateSolarTotalCurrent(sample.solar1_current, sample.solar2_current);
   const solarTotalPower = calculateSolarTotalPower(sample.solar1_power, sample.solar2_power);
   const batteryPower = calculateBatteryPower(sample.battery_voltage, sample.battery_current);
+  // Legacy INA219 columns carry the dedicated Waveshare UPS HAT values from RPi.
+  const upsVoltage = finite(sample.ina219_shunt_voltage_mv);
+  const upsCurrent = finite(sample.ina219_current);
+  const upsPower = finite(sample.ina219_power);
   return {
     ...sample,
     solar_total_current: solarTotalCurrent,
     solar_total_power_w: solarTotalPower,
     battery_power_w: batteryPower,
     battery_state: getBatteryFlowState(sample.battery_voltage, sample.battery_current),
+    ups_voltage_v: upsVoltage,
+    ups_current_a: upsCurrent,
+    ups_power_w: upsPower,
+    ups_charge_percent: calculateUpsChargePercent(upsVoltage),
+    ups_state: getUpsFlowState(upsCurrent),
     energy_charged_wh: 0,
     energy_discharged_wh: 0,
     energy_balance_wh: 0,
