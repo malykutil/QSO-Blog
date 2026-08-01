@@ -17,7 +17,7 @@ import {
   getTelemetryFreshness,
   SOLAR_MEASUREMENT_CONFIG,
 } from "@/src/lib/solar-energy";
-import { getMq9AirQuality } from "@/src/lib/mq9-air-quality";
+import { getMq9AirQuality, MQ9_CRITICAL_RAW } from "@/src/lib/mq9-air-quality";
 import { readThemeMode, saveThemeMode } from "@/src/lib/theme";
 
 const relayMeta: Record<SolarRelayName, { label: string; description: string; critical?: boolean }> = {
@@ -39,6 +39,7 @@ const tabs = [
 
 type Tab = (typeof tabs)[number][0];
 type HistoryRange = "1h" | "6h" | "24h" | "7d" | "30d";
+const historyRanges: readonly HistoryRange[] = ["1h", "6h", "24h", "7d", "30d"];
 type SolarPayload = {
   telemetry: SolarEnergyPoint | null;
   history: SolarEnergyPoint[];
@@ -119,6 +120,38 @@ function Panel({
       {title ? <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">{title}</h2> : null}
       {children}
     </section>
+  );
+}
+
+function HistoryRangePicker({
+  value,
+  onChange,
+  title,
+}: {
+  value: HistoryRange;
+  onChange: (range: HistoryRange) => void;
+  title: string;
+}) {
+  return (
+    <Panel className="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p className="solar-eyebrow">Časový rozsah</p>
+        <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">{title}</h2>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {historyRanges.map((range) => (
+          <button
+            key={range}
+            type="button"
+            onClick={() => onChange(range)}
+            className={`solar-range ${value === range ? "is-active" : ""}`}
+            aria-pressed={value === range}
+          >
+            {range}
+          </button>
+        ))}
+      </div>
+    </Panel>
   );
 }
 
@@ -469,24 +502,7 @@ export default function SolarPage() {
 
             {activeTab === "energy" ? (
               <div className="grid gap-4">
-                <Panel className="flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <p className="solar-eyebrow">Časový rozsah</p>
-                    <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">Energetická historie</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {(["1h", "6h", "24h", "7d", "30d"] as HistoryRange[]).map((range) => (
-                      <button
-                        key={range}
-                        type="button"
-                        onClick={() => setHistoryRange(range)}
-                        className={`solar-range ${historyRange === range ? "is-active" : ""}`}
-                      >
-                        {range}
-                      </button>
-                    ))}
-                  </div>
-                </Panel>
+                <HistoryRangePicker value={historyRange} onChange={setHistoryRange} title="Energetická historie" />
                 <InteractiveHistoryChart
                   history={history}
                   series={[
@@ -532,6 +548,7 @@ export default function SolarPage() {
 
             {activeTab === "temperature" ? (
               <div className="grid gap-4">
+                <HistoryRangePicker value={historyRange} onChange={setHistoryRange} title="Historie teplot a kvality vzduchu" />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <Metric label="Teplota v chatě" value={formatValue(telemetry?.object_temperature, "°C")} />
                   <Metric label="Venkovní teplota" value={formatValue(telemetry?.outside_temperature, "°C")} />
@@ -558,6 +575,13 @@ export default function SolarPage() {
                   ]}
                   title="Teploty"
                   unit="°C"
+                />
+                <InteractiveHistoryChart
+                  history={history}
+                  series={[["mq9_raw", "MQ-9", "#f97316"]]}
+                  title="Koncentrace CO a hořlavých plynů (MQ-9)"
+                  unit="RAW"
+                  referenceLines={[[MQ9_CRITICAL_RAW + 1, "Hranice poplachu", "#dc2626"]]}
                 />
               </div>
             ) : null}
