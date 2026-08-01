@@ -37,6 +37,16 @@ export function calculateSolarTotalCurrent(
   return (solar1 ?? 0) + (solar2 ?? 0);
 }
 
+export function calculateSolarTotalPower(
+  solar1Power: number | null | undefined,
+  solar2Power: number | null | undefined,
+) {
+  const solar1 = finite(solar1Power);
+  const solar2 = finite(solar2Power);
+  if (solar1 === null && solar2 === null) return null;
+  return (solar1 ?? 0) + (solar2 ?? 0);
+}
+
 export function getBatteryFlowState(
   batteryVoltage: number | null | undefined,
   batteryCurrent: number | null | undefined,
@@ -59,10 +69,12 @@ export function getTelemetryFreshness(recordedAt: string | null | undefined, now
 
 export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
   const solarTotalCurrent = calculateSolarTotalCurrent(sample.solar1_current, sample.solar2_current);
+  const solarTotalPower = calculateSolarTotalPower(sample.solar1_power, sample.solar2_power);
   const batteryPower = calculateBatteryPower(sample.battery_voltage, sample.battery_current);
   return {
     ...sample,
     solar_total_current: solarTotalCurrent,
+    solar_total_power_w: solarTotalPower,
     battery_power_w: batteryPower,
     battery_state: getBatteryFlowState(sample.battery_voltage, sample.battery_current),
     energy_charged_wh: 0,
@@ -121,23 +133,35 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     current.energy_balance_wh = chargedWh - dischargedWh;
   }
 
-  const numeric = (key: "solar1_current" | "solar2_current" | "solar_total_current") =>
+  const numeric = (key: keyof SolarEnergyPoint) =>
     history
       .map((sample) => sample[key])
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const solar1Values = numeric("solar1_current");
   const solar2Values = numeric("solar2_current");
   const solarTotalValues = numeric("solar_total_current");
+  const solarPowerValues = numeric("solar_total_power_w");
+  const batteryVoltageValues = numeric("battery_voltage");
+  const objectTemperatureValues = numeric("object_temperature");
+  const latestProducedEnergy = [...history].reverse().find((sample) => finite(sample.solar_energy_today_wh) !== null)?.solar_energy_today_wh ?? null;
+  const latestConsumedEnergy = [...history].reverse().find((sample) => finite(sample.load_energy_today_wh) !== null)?.load_energy_today_wh ?? null;
 
   return {
     history,
     summary: {
+      produced_energy_wh: finite(latestProducedEnergy),
+      consumed_energy_wh: finite(latestConsumedEnergy),
       charged_energy_wh: chargedWh,
       discharged_energy_wh: dischargedWh,
       energy_balance_wh: chargedWh - dischargedWh,
+      solar_max_power_w: solarPowerValues.length ? Math.max(...solarPowerValues) : null,
       solar1_max_current_a: solar1Values.length ? Math.max(...solar1Values) : null,
       solar2_max_current_a: solar2Values.length ? Math.max(...solar2Values) : null,
       solar_total_max_current_a: solarTotalValues.length ? Math.max(...solarTotalValues) : null,
+      battery_voltage_min_v: batteryVoltageValues.length ? Math.min(...batteryVoltageValues) : null,
+      battery_voltage_max_v: batteryVoltageValues.length ? Math.max(...batteryVoltageValues) : null,
+      object_temperature_min_c: objectTemperatureValues.length ? Math.min(...objectTemperatureValues) : null,
+      object_temperature_max_c: objectTemperatureValues.length ? Math.max(...objectTemperatureValues) : null,
       active_charging_minutes: Math.round(activeChargingMs / 60_000),
       skipped_gaps: skippedGaps,
       unique_samples: history.length,
