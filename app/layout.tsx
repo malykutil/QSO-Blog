@@ -25,6 +25,12 @@ export const metadata: Metadata = {
   },
   description: "Radioamatérský web OK2MKJ se zápisky z provozu, mapou spojení a databází QSO.",
   applicationName: "OK2MKJ",
+  category: "technology",
+  appleWebApp: {
+    capable: true,
+    title: "OK2KZB Solární dohled",
+    statusBarStyle: "black-translucent",
+  },
   keywords: ["OK2MKJ", "radioamatér", "QSO", "ham radio", "logbook", "mapa spojení", "antény", "provoz"],
   authors: [{ name: "Jakub / OK2MKJ" }],
   openGraph: {

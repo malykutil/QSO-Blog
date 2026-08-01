@@ -32,8 +32,14 @@ export async function POST(request: NextRequest) {
   if (!validDeviceRequest(request)) return NextResponse.json({ error: "Neplatny device token." }, { status: 401 });
   const supabase = getSupabaseAdminClient() ?? await getSupabaseRouteClient();
   if (!supabase) return NextResponse.json({ error: "Supabase neni nastavene." }, { status: 503 });
-  let payload: { relay?: unknown; isOn?: unknown };
+  let payload: { relay?: unknown; isOn?: unknown; emergencyStop?: unknown };
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatne JSON." }, { status: 400 }); }
+  if (payload.emergencyStop === true) {
+    const rows = solarRelayNames.map((relay) => ({ relay, is_on: false }));
+    const { error } = await supabase.from("solar_relay_states").upsert(rows);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, emergencyStop: true, relays: defaultSolarRelayState });
+  }
   if (typeof payload.relay !== "string" || !solarRelayNames.includes(payload.relay as SolarRelayName) || typeof payload.isOn !== "boolean") {
     return NextResponse.json({ error: "Neplatne rele nebo stav." }, { status: 400 });
   }

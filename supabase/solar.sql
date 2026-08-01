@@ -23,6 +23,19 @@ alter table public.solar_telemetry add column if not exists outside_temperature 
 alter table public.solar_telemetry add column if not exists outside_pressure numeric;
 alter table public.solar_telemetry add column if not exists mq9_raw numeric;
 alter table public.solar_telemetry add column if not exists mq9_voltage numeric;
+alter table public.solar_telemetry add column if not exists arduino_uptime_ms numeric;
+alter table public.solar_telemetry add column if not exists battery_pressure numeric;
+alter table public.solar_telemetry add column if not exists ina219_current numeric;
+alter table public.solar_telemetry add column if not exists ina219_power numeric;
+alter table public.solar_telemetry add column if not exists ina219_shunt_voltage_mv numeric;
+alter table public.solar_telemetry add column if not exists acs1_raw numeric;
+alter table public.solar_telemetry add column if not exists acs1_voltage numeric;
+alter table public.solar_telemetry add column if not exists acs2_raw numeric;
+alter table public.solar_telemetry add column if not exists acs2_voltage numeric;
+alter table public.solar_telemetry add column if not exists acs3_raw numeric;
+alter table public.solar_telemetry add column if not exists acs3_voltage numeric;
+alter table public.solar_telemetry add column if not exists mq9_alarm boolean not null default false;
+alter table public.solar_telemetry add column if not exists mq9_alarm_trigger_raw numeric;
 
 create index if not exists solar_telemetry_recorded_at_idx on public.solar_telemetry (recorded_at desc);
 

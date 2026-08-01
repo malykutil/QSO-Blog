@@ -1,34 +1,41 @@
-# Arduino Nano jako ADC přes I²C
+# Arduino Nano – senzory přes USB do Raspberry Pi
 
-Kompatibilní druhá verze firmware pro stejný Raspberry Pi uploader jako Pico.
-Nano vystupuje jako I²C slave na adrese `0x42` a posílá 24B rámec od registru
-`0x10`.
+Firmware čte všechny připojené senzory a každé 2 sekundy posílá po USB jeden
+řádek platného JSONu. Raspberry Pi jej načítá pomocí `scripts/rpi_telemetry.py`
+a odesílá do webového API `/api/solar`.
 
-## Analogové kanály
+## Zapojení
 
-| Čidlo | Arduino Nano |
-|---|---|
-| ACS712 č. 1 | A0 |
-| ACS712 č. 2 | A1 |
-| ACS712 č. 3 | A2 |
-| MQ-9 analog OUT | A3 |
+| Čidlo | Arduino Nano | Poznámka |
+|---|---|---|
+| MQ-9 AO | A0 | rozsah vstupu 0–5 V |
+| ACS712 č. 1 | A1 | webové pole Solar 1 |
+| ACS712 č. 2 | A2 | webové pole Solar 2 |
+| ACS712 č. 3 | A3 | webové pole proud baterie |
+| BMP280 č. 1 | A4/SDA, A5/SCL | adresa 0x76, teplota baterie |
+| BMP280 č. 2 | A4/SDA, A5/SCL | adresa 0x77, venkovní teplota a tlak |
+| INA219 | A4/SDA, A5/SCL | adresa 0x40, napětí baterie |
+| Raspberry Pi | USB | napájení, programování a telemetrie |
 
-Klasické Nano používá 5V analogovou referenci. Firmware posílá raw hodnoty i
-napětí v mV. Pro ACS712 20A je výchozí kalibrace přibližně 2500 mV nulový bod a
-100 mV/A citlivost; skutečné hodnoty je vhodné doladit měřením.
+Všechna čidla musí mít společnou zem. Dva BMP280 musí mít rozdílné adresy
+0x76 a 0x77; u běžných modulů se adresa volí pinem SDO. I²C zařízení na Nano
+připojuj podle napěťových požadavků konkrétních modulů. Samotný čip BMP280 i
+INA219 je 3,3V, některé breakout moduly však mají regulátor a převod úrovní.
 
-## I²C k Raspberry Pi
+Výchozí kalibrace počítá s ACS712-20A (100 mV/A, nula 2,5 V). Konstanty
+`ACS_ZERO_MV` a `ACS_SENSITIVITY_MV_PER_A` ve firmware uprav podle typu a
+naměřeného nulového bodu každého modulu.
 
-| Arduino Nano | Raspberry Pi |
-|---|---|
-| A4 / SDA | GPIO2 / SDA |
-| A5 / SCL | GPIO3 / SCL |
-| GND | GND |
+## Sestavení a nahrání
 
-Pozor: Nano 5V logiku nesmí připojit přímo na 3,3V I²C Raspberry Pi. Použij
-obousměrný převodník úrovní SDA/SCL (například BSS138 modul) a 3,3V pull-up na
-straně Raspberry Pi. MQ-9 napájej podle jeho modulu; analogový výstup musí zůstat
-v rozsahu 0–5 V Nano ADC.
+```bash
+pio run -d arduino_nano_adc_i2c
+pio run -d arduino_nano_adc_i2c -t upload --upload-port /dev/ttyUSB0
+```
 
-V Arduino IDE vyber `Arduino Nano`, procesor `ATmega328P` a správný bootloader,
-potom nahraj `arduino_nano_adc_i2c.ino`.
+Instalované Nano používá starý bootloader, proto je nastaveno
+`nanoatmega328` (upload 57 600 baud). Aktuální JSON lze zkontrolovat příkazem:
+
+```bash
+pio device monitor --baud 115200 --port /dev/ttyUSB0
+```

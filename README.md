@@ -40,7 +40,9 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 2. Na server přidej `SUPABASE_SERVICE_ROLE_KEY` a náhodný `SOLAR_RPI_TOKEN`.
 3. Volitelně nastav `SOLAR_CONTROL_USERNAME` a `SOLAR_CONTROL_PASSWORD` (výchozí hodnoty jsou `KZB` a `OK2KZB`).
 
-RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>`. Kromě proudů a teplot může posílat `solar1_voltage`, `solar2_voltage`, `battery_voltage`, `solar1_power`, `solar2_power`, `load_power`, `solar_energy_today_wh` a `load_energy_today_wh`.
+RPi posílá `POST /api/solar` s hlavičkou `Authorization: Bearer <SOLAR_RPI_TOKEN>`. Energetický přehled používá skutečně měřené `solar1_current`, `solar2_current`, `battery_voltage` a `battery_current`. Výkon baterie počítá jako napětí × proud a energii integruje podle skutečných časových rozestupů. Historická pole výkonu nebo napětí panelů mohou v databázi zůstat kvůli kompatibilitě staršího ingestu, ale uživatelské rozhraní je nepoužívá.
+
+RPi obsahuje také doplňkovou MQ-9 ochranu: tři kritické vzorky po sobě lokálně vypnou všechna relé a trvale zalatchují poplach. Po aktualizaci spusť v Supabase SQL editoru [supabase/solar.sql](supabase/solar.sql), aby web uchovával alarmový stav i po poklesu aktuální RAW hodnoty. MQ-9 nenahrazuje certifikovaný kouřový ani CO hlásič.
 
 Pro načtení požadovaných stavů relé používá RPi `GET /api/solar` se stejnou hlavičkou. Webové ovládání je na `/solar` a je dostupné pouze po přihlášení účtem KZB.
 

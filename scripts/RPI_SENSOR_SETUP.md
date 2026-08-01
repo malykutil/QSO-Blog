@@ -1,38 +1,55 @@
-# Zapojení senzorů pro Raspberry Pi 3B+
+# Arduino Nano a Raspberry Pi – sběr telemetrie
 
-Používej BCM číslování GPIO. Všechny senzory musí mít společnou zem. Raspberry Pi pracuje s 3,3 V logikou; 5V analogový výstup nesmí přímo do GPIO.
+Arduino Nano čte analogová i I²C čidla. Raspberry Pi je připojené pouze přes USB,
+čte JSON ze sériového portu a každých 60 sekund jej odešle do `/api/solar`.
 
-## I²C větev
+## Zapojení k Arduino Nano
 
-| Zařízení | VCC | GND | SDA | SCL | Adresa |
-|---|---:|---:|---:|---:|---:|
-| BMP280 u baterie | 3V3, pin 1 | GND, pin 6 | GPIO2, pin 3 | GPIO3, pin 5 | 0x76 |
-| BMP280 venku | 3V3, pin 17 | GND, pin 9 | GPIO2, pin 3 | GPIO3, pin 5 | 0x77 |
-| INA219 baterie | 3V3, pin 17 | GND, pin 14 | GPIO2, pin 3 | GPIO3, pin 5 | 0x40 |
+| Zařízení | Pin / sběrnice | I²C adresa | Webová hodnota |
+|---|---|---:|---|
+| MQ-9 AO | A0 | – | MQ-9 RAW a napětí |
+| ACS712 č. 1 | A1 | – | Solar 1 proud |
+| ACS712 č. 2 | A2 | – | Solar 2 proud |
+| ACS712 č. 3 | A3 | – | Proud baterie |
+| BMP280 u baterie | A4/SDA, A5/SCL | 0x76 | Teplota baterie |
+| BMP280 venku | A4/SDA, A5/SCL | 0x77 | Venkovní teplota a tlak |
+| INA219 | A4/SDA, A5/SCL | 0x40 | Napětí baterie |
 
-Na jednom I²C busu musí mít dva BMP280 rozdílné adresy. U jednoho modulu nastav SDO/ADDR na GND (0x76), u druhého nech SDO/ADDR na 3V3 (0x77). Pokud modul nemá vyvedený SDO/ADDR, použij TCA9548A multiplexer.
+Na jednom I²C busu musí mít oba BMP280 rozdílné adresy. U jednoho modulu nastav
+SDO/ADDR na GND (0x76), u druhého na VCC (0x77). Pokud modul adresu změnit
+neumí, je potřeba I²C multiplexer. Všechna čidla musí mít společnou zem.
 
-## Jednovodičové čidlo
+Pozor na napájecí napětí konkrétních breakout modulů. Samotné BMP280 a INA219
+jsou 3,3V součástky; připojení k 5V Nano je bezpečné jen u modulů s potřebným
+regulátorem/převodem úrovní. Analogové výstupy do A0–A3 nesmí překročit 5 V.
 
-| Zařízení | VCC | DATA | GND |
-|---|---:|---:|---:|
-| DHT11 objekt | 3V3, pin 1 | BCM GPIO26, fyzický pin 37 | GND, pin 39 |
+`VIN+` INA219 připoj na kladný pól zdroje a `VIN-` směrem k zátěži. Zdroj
+nezapojuj obráceně.
 
-## INA219 v napájecí cestě baterie
+Přímo na RPi jsou dvě čidla DHT11:
 
-`VIN+` připoj na kladný pól baterie a `VIN-` na kladný pól napájené větve/zátěže. Baterii nezapojuj obráceně. INA219 měří napětí za modulem a proud tekoucí přes VIN+ → VIN-.
+| Měření | VCC | DATA | GND | Webové pole |
+|---|---|---|---|---|
+| Chata | 3V3 | BCM GPIO26 | GND | teplota a vlhkost v chatě |
+| MPPT | 3V3 | BCM GPIO21 | GND | teplota MPPT |
 
-## ACS712 a MQ-9
+Čidlo v chatě lze vypnout pomocí `DHT_ENABLED=0`, čidlo MPPT pomocí
+`DHT_MPPT_ENABLED=0`.
 
-ACS712 (3 kusy) i MQ-9 mají analogový výstup. Raspberry Pi nemá analogový vstup, takže jejich OUT nepřipojuj přímo na GPIO. Přidej ADC, například ADS1115 (I²C) nebo MCP3008 (SPI), a teprve potom doplň mapování kanálů do uploaderu. Web už má připravené proudové kanály Solár 1, Solár 2, Baterie a pole MQ-9; do té doby se zobrazí prázdná hodnota.
+## Firmware Arduino Nano
 
-Alternativa s Raspberry Pi Pico: nahraj firmware z `pico_adc_i2c/`. Pico načítá ACS712 přes GP26, GP27 a GP28 a poskytuje rámec přes I²C na adrese `0x42`. Propojení Pico–Pi je GP4/SDA → GPIO2/SDA, GP5/SCL → GPIO3/SCL a společná GND. MQ-9 na standardním Pico nemá čtvrtý volný externí ADC kanál; pro něj zůstává potřeba ADS1115/MCP3008. Výstup ACS712 20A je při napájení 5 V přibližně 0–5 V, proto před Pico použij napěťový dělič (např. 10 kΩ nahoře a 20 kΩ dole) a společnou zem.
+Z kořene repozitáře:
 
-Alternativa s Arduino Nano: firmware je v `arduino_nano_adc_i2c/`. ACS712 jsou na A0–A2, MQ-9 na A3 a I²C slave adresa zůstává `0x42`. Nano 5V SDA/SCL připojuj k Raspberry Pi pouze přes obousměrný převodník úrovní.
+```bash
+pio run -d arduino_nano_adc_i2c
+pio run -d arduino_nano_adc_i2c -t upload --upload-port /dev/ttyUSB0
+```
 
-## Instalace na RPi
+Instalované Nano je na stabilní cestě
+`/dev/serial/by-id/usb-1a86_USB2.0-Ser_-if00-port0` a používá starý bootloader
+(`nanoatmega328`, upload 57 600 baud).
 
-Nejjednodušší instalace z naklonovaného repozitáře:
+## Instalace služby na RPi
 
 ```bash
 cd QSO-Blog/scripts
@@ -41,20 +58,36 @@ chmod +x install-rpi-telemetry.sh
 nano /home/ft-891/qso-blog.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now rpi-telemetry
-```
-
-Do `qso-blog.env` doplň stejný `SOLAR_RPI_TOKEN`, který je nastavený ve Vercelu. Konfigurační soubor má práva pouze pro vlastníka (`0600`).
-
-```bash
-sudo apt install -y python3-lgpio
-python3 -m pip install --break-system-packages adafruit-circuitpython-dht adafruit-circuitpython-bmp280 adafruit-circuitpython-ina219 adafruit-blinka
-sudo cp rpi-telemetry.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now rpi-telemetry.service
 sudo journalctl -u rpi-telemetry -f
 ```
 
-V `/home/ft-891/qso-blog.env` nastav `SOLAR_API_URL`, `SOLAR_RPI_TOKEN`, `BMP_BATTERY_ADDRESS=0x76`, `BMP_OUTSIDE_ADDRESS=0x77` a `TELEMETRY_INTERVAL_SECONDS=60`.
+Do `/home/ft-891/qso-blog.env` nastav `SOLAR_API_URL`, stejný
+`SOLAR_RPI_TOKEN` jako ve Vercelu a `TELEMETRY_INTERVAL_SECONDS=60`.
+`ARDUINO_SERIAL_PORT` může zůstat prázdný pro automatickou detekci. Pokud je na
+RPi více USB převodníků, nastav stabilní cestu z `/dev/serial/by-id/`.
+
+Služba běží jako uživatel `ft-891`; instalační skript jej přidá do skupiny
+`dialout`, aby mohl otevřít `/dev/ttyUSB*` nebo `/dev/ttyACM*`.
+
+## Doplňková ochrana MQ-9
+
+RPi čte MQ-9 z USB přibližně každé 2 sekundy. Tři po sobě jdoucí vzorky nad
+`MQ9_CRITICAL_RAW=833` vyvolají trvalý poplach: všechna lokální relé se okamžitě
+vypnou, stejný nouzový stav se odešle na server a alarm se uloží do
+`/home/ft-891/mq9-alarm-latched.json`. Výpadek internetu ani restart služby
+alarm nezruší.
+
+Alarm je možné resetovat pouze po fyzické kontrole objektu:
+
+```bash
+sudo systemctl stop rpi-telemetry
+rm /home/ft-891/mq9-alarm-latched.json
+sudo systemctl start rpi-telemetry
+```
+
+MQ-9 reaguje na CO a hořlavé plyny, ale nejde o certifikovaný kouřový nebo
+požární hlásič. Tato automatika je pouze doplňková ochrana. V objektu musí být
+samostatný certifikovaný kouřový a CO hlásič s vlastní sirénou a napájením.
 
 ## Příprava relé přes GPIO
 
@@ -69,9 +102,9 @@ Uploader používá BCM GPIO piny bez kolize se senzory:
 | fan12v | 19 | vypnuto |
 | fan24v | 20 | vypnuto |
 
-Piny vedou do vstupů relé modulu, ne přímo do výkonové zátěže. Relé modul musí mít společnou zem s Raspberry Pi a vhodné oddělení/napájení. Výchozí režim je aktivní LOW (`RELAY_ACTIVE_LOW=1`); pokud je modul aktivní HIGH, nastav `RELAY_ACTIVE_LOW=0`.
-
-Do `/home/ft-891/qso-blog.env` lze piny přepsat například:
+Piny vedou do vstupů relé modulu, ne přímo do výkonové zátěže. Relé modul musí
+mít společnou zem s Raspberry Pi a vhodné oddělení/napájení. Výchozí režim je
+aktivní LOW; pro aktivní HIGH nastav `RELAY_ACTIVE_LOW=0`.
 
 ```bash
 RELAY_ACTIVE_LOW=1
@@ -84,4 +117,4 @@ RELAY_FAN12V_GPIO=19
 RELAY_FAN24V_GPIO=20
 ```
 
-Po startu jsou všechna relé nastavena na vypnuto. RPi potom každých 5 sekund načítá potvrzený stav z `/api/solar/device` a fyzické výstupy podle něj nastaví. Při ukončení služby se relé opět vypnou.
+Při startu i ukončení služby jsou všechna relé nastavena na vypnuto.

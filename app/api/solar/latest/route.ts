@@ -5,7 +5,7 @@ import { defaultSolarRelayState, type SolarRelayName } from "@/src/lib/solar-dat
 
 export const dynamic = "force-dynamic";
 
-const latestTelemetryFields = "solar1_voltage,solar2_voltage,battery_voltage,solar1_current,solar2_current,battery_current,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
+const latestTelemetryFields = "battery_voltage,solar1_current,solar2_current,battery_current,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
 
 export async function GET() {
   const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());

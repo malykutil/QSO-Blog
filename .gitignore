@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /out/
+.android-sdk/
 
 # production
 /build
@@ -39,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PlatformIO build output
+**/.pio/
+esp32_2432s028r_ui/include/secrets.h

@@ -1,9 +1,12 @@
 "use client";
 
 import { useRef, useState, type PointerEvent } from "react";
-import type { SolarTelemetry } from "@/src/lib/solar-data";
+import type { SolarEnergyPoint } from "@/src/lib/solar-data";
+import { SOLAR_MEASUREMENT_CONFIG } from "@/src/lib/solar-energy";
 
-type NumericTelemetryKey = Exclude<keyof SolarTelemetry, "recorded_at">;
+type NumericTelemetryKey = {
+  [Key in keyof SolarEnergyPoint]: SolarEnergyPoint[Key] extends number | null ? Key : never;
+}[keyof SolarEnergyPoint];
 type ChartSeries = readonly (readonly [NumericTelemetryKey, string, string])[];
 type DragState = { pointerId: number; startX: number; startEnd: number };
 
@@ -13,7 +16,7 @@ const CHART_PADDING = 20;
 const MAX_VISIBLE_POINTS = 240;
 const OVERVIEW_POINTS = 180;
 
-function downsampleHistory(history: SolarTelemetry[], maxPoints: number) {
+function downsampleHistory(history: SolarEnergyPoint[], maxPoints: number) {
   if (history.length <= maxPoints) return history;
   return Array.from({ length: maxPoints }, (_, index) => history[Math.round((index / (maxPoints - 1)) * (history.length - 1))]);
 }
@@ -42,7 +45,7 @@ function formatAxisDate(date: string, spanHours: number) {
   return new Intl.DateTimeFormat("cs-CZ", options).format(new Date(date));
 }
 
-export function InteractiveHistoryChart({ history, series, title, unit }: { history: SolarTelemetry[]; series: ChartSeries; title: string; unit: string }) {
+export function InteractiveHistoryChart({ history, series, title, unit }: { history: SolarEnergyPoint[]; series: ChartSeries; title: string; unit: string }) {
   const plotHeight = CHART_HEIGHT - CHART_PADDING * 2;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [activeKeys, setActiveKeys] = useState<NumericTelemetryKey[]>(() => series.map(([key]) => key));
@@ -55,7 +58,10 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
   const visibleHistory = history.slice(visibleStart, effectiveViewEnd);
   const overviewHistory = downsampleHistory(history, OVERVIEW_POINTS);
   const visibleSeries = series.filter(([key]) => activeKeys.includes(key));
-  const values = visibleSeries.flatMap(([key]) => history
+  const availableValues = series.flatMap(([key]) => history
+    .map((item) => item[key])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
+  const values = visibleSeries.flatMap(([key]) => visibleHistory
     .map((item) => item[key])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
   const max = Math.max(1, ...values);
@@ -69,29 +75,41 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     - CHART_PADDING;
   const pathFor = (key: NumericTelemetryKey) => {
     let path = "";
-    let previousIndex: number | null = null;
+    let previousTimestamp: number | null = null;
     visibleHistory.forEach((item, index) => {
       const value = item[key];
       if (typeof value !== "number" || !Number.isFinite(value)) {
+        previousTimestamp = null;
         return;
       }
-      path += `${previousIndex === null ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)} `;
-      previousIndex = index;
+      const timestamp = new Date(item.recorded_at).getTime();
+      const startsNewSegment =
+        previousTimestamp === null ||
+        timestamp - previousTimestamp > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs;
+      path += `${startsNewSegment ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)} `;
+      previousTimestamp = timestamp;
     });
     return path.trim();
   };
   const overviewPathFor = (key: NumericTelemetryKey) => {
     let path = "";
-    let previousIndex: number | null = null;
+    let previousTimestamp: number | null = null;
     overviewHistory.forEach((item, index) => {
       const value = item[key];
-      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        previousTimestamp = null;
+        return;
+      }
       const x = overviewHistory.length > 1
         ? (index / (overviewHistory.length - 1)) * CHART_WIDTH
         : CHART_WIDTH / 2;
       const y = 36 - (((value - min) / span) * 28);
-      path += `${previousIndex === null ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)} `;
-      previousIndex = index;
+      const timestamp = new Date(item.recorded_at).getTime();
+      const startsNewSegment =
+        previousTimestamp === null ||
+        timestamp - previousTimestamp > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs;
+      path += `${startsNewSegment ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)} `;
+      previousTimestamp = timestamp;
     });
     return path.trim();
   };
@@ -140,14 +158,14 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
     ? current.filter((item) => item !== key)
     : [...current, key]);
 
-  return <div className="glass-panel rounded-[2rem] p-6 md:p-8">
+  return <div className="solar-panel p-4 md:p-5">
     <div>
-      <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Historie</p>
-      <h2 className="mt-3 text-3xl font-semibold text-slate-950">{title}</h2>
+      <p className="solar-eyebrow">Historie</p>
+      <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">{title}</h2>
     </div>
-    {history.length < 2 ? <p className="mt-6 rounded-[1.2rem] bg-slate-100 px-4 py-4 text-sm text-slate-600">Pro graf potrebuji alespon dve mereni z Raspberry Pi.</p> : <>
-      <div className="mt-6 overflow-hidden rounded-[1.5rem] bg-slate-950 p-3">
-        <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={`h-auto w-full touch-none ${history.length > MAX_VISIBLE_POINTS ? "cursor-grab active:cursor-grabbing" : ""}`} role="img" aria-label={`${title}. Tazenim posunete casovou osu, najetim zobrazite hodnoty.`} onMouseLeave={() => { if (!dragRef.current) setHoveredIndex(null); }}>
+    {history.length < 2 || availableValues.length < 2 ? <p className="solar-alert solar-alert--info mt-4">Pro zvolené veličiny nejsou v tomto období alespoň dvě platná měření.</p> : <>
+      <div className="mt-4 overflow-hidden rounded-lg bg-slate-950 p-3">
+        <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={`h-auto w-full touch-none ${history.length > MAX_VISIBLE_POINTS ? "cursor-grab active:cursor-grabbing" : ""}`} role="img" aria-label={`${title}. Tažením posunete časovou osu, najetím zobrazíte hodnoty.`} onMouseLeave={() => { if (!dragRef.current) setHoveredIndex(null); }}>
           <g stroke="#29404c" strokeWidth="1">
             <path d={`M0 ${CHART_PADDING}H${CHART_WIDTH}`} />
             <path d={`M0 ${CHART_HEIGHT / 2}H${CHART_WIDTH}`} />
@@ -176,15 +194,15 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {series.map(([key, label, color]) => <button key={String(key)} type="button" onClick={() => toggleSeries(key)} className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition ${activeKeys.includes(key) ? "border-slate-300 bg-white text-slate-700" : "border-slate-200 bg-slate-100 text-slate-400 line-through"}`}><i className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activeKeys.includes(key) ? color : "#94a3b8" }} />{label}</button>)}
-        <span className="self-center px-2 text-sm text-slate-400">{unit} · kliknutim skryjete krivku</span>
-        {history.length > MAX_VISIBLE_POINTS ? <><span className="hidden text-sm text-slate-400 sm:inline">Tazenim grafu posunete cas</span><button type="button" onClick={() => { setViewEnd(history.length); setFollowLatest(true); setHoveredIndex(null); }} className="rounded-full bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">Nejnovejsi</button></> : null}
+        <span className="self-center px-2 text-sm text-slate-400">{unit} · kliknutím skryjete křivku</span>
+        {history.length > MAX_VISIBLE_POINTS ? <><span className="hidden text-sm text-slate-400 sm:inline">Tažením grafu posunete čas</span><button type="button" onClick={() => { setViewEnd(history.length); setFollowLatest(true); setHoveredIndex(null); }} className="rounded-full bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">Nejnovější</button></> : null}
       </div>
       {history.length > MAX_VISIBLE_POINTS ? <div className="mt-3 rounded-2xl bg-slate-100/80 px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-          <span>Prehled celeho zvoleneho obdobi</span>
+          <span>Přehled celého zvoleného období</span>
           <span>{formatDate(history[0].recorded_at)} — {formatDate(history[history.length - 1].recorded_at)}</span>
         </div>
-        <svg viewBox={`0 0 ${CHART_WIDTH} 44`} className="mt-1 h-10 w-full" role="img" aria-label="Prehled cele casove osy">
+        <svg viewBox={`0 0 ${CHART_WIDTH} 44`} className="mt-1 h-10 w-full" role="img" aria-label="Přehled celé časové osy">
           <path d={`M0 36H${CHART_WIDTH}`} stroke="#cbd5e1" strokeWidth="1" />
           {visibleSeries.map(([key, , color]) => <path key={`overview-${String(key)}`} d={overviewPathFor(key)} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />)}
           <rect
@@ -204,7 +222,7 @@ export function InteractiveHistoryChart({ history, series, title, unit }: { hist
           const minimum = numbers.length ? Math.min(...numbers) : null;
           const average = numbers.length ? numbers.reduce((total, item) => total + item, 0) / numbers.length : null;
           const maximum = numbers.length ? Math.max(...numbers) : null;
-          return <div key={String(key)} className="rounded-2xl bg-slate-100/80 px-4 py-3 text-xs text-slate-500"><p className="flex items-center gap-2 font-semibold text-slate-700"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{label}</p><p className="mt-2">min {formatValue(minimum, unit)} · prumer {formatValue(average, unit)} · max {formatValue(maximum, unit)}</p></div>;
+          return <div key={String(key)} className="rounded-lg bg-slate-100/80 px-4 py-3 text-xs text-slate-500"><p className="flex items-center gap-2 font-semibold text-slate-700"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{label}</p><p className="mt-2">min {formatValue(minimum, unit)} · průměr {formatValue(average, unit)} · max {formatValue(maximum, unit)}</p></div>;
         })}
       </div>
     </>}

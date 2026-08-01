@@ -7,13 +7,13 @@ SERVICE_NAME="rpi-telemetry"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 sudo apt-get update
-sudo apt-get install -y python3-lgpio python3-pip
+sudo apt-get install -y python3-lgpio python3-pip python3-serial
 python3 -m pip install --break-system-packages \
   adafruit-circuitpython-dht \
-  adafruit-circuitpython-bmp280 \
-  adafruit-circuitpython-ina219 \
-  adafruit-blinka \
-  smbus2
+  adafruit-blinka
+
+# USB seriove porty /dev/ttyUSB* a /dev/ttyACM* jsou bezne ve skupine dialout.
+sudo usermod -a -G dialout "${TARGET_USER}"
 
 sudo install -d -o "${TARGET_USER}" -g "${TARGET_USER}" "${INSTALL_DIR}"
 sudo install -m 0755 "${SCRIPT_DIR}/rpi_telemetry.py" "${INSTALL_DIR}/rpi_telemetry.py"
