@@ -217,7 +217,6 @@ class UpsHatReader:
         return {
             "voltage": round(voltage, 3),
             "current": round(current, 4),
-            "power": round(voltage * current, 3),
             "percent": round(percent, 1),
         }
 
@@ -383,10 +382,10 @@ def read_sensors(nano_payload):
         "outside_pressure": payload_number(nano_payload, "outside_pressure"),
         "battery_pressure": payload_number(nano_payload, "battery_pressure"),
         "battery_voltage": payload_number(nano_payload, "ina219_bus_voltage"),
-        # Tato tri existujici databazova pole prenaseji INA219 z Waveshare UPS
-        # HAT na RPi: proud, podepsany vykon a napeti UPS baterioveho packu.
+        # Existujici INA219 pole prenaseji z Waveshare UPS HAT proud a napeti.
+        # Vykon se nezobrazuje ani neuklada; dashboard je zamerne proudovy.
         "ina219_current": ups.get("current"),
-        "ina219_power": ups.get("power"),
+        "ina219_power": None,
         "ina219_shunt_voltage_mv": ups.get("voltage"),
         "solar1_current": payload_number(nano_payload, "acs1_current"),
         "solar2_current": payload_number(nano_payload, "acs2_current"),

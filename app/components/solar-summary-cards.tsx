@@ -22,12 +22,12 @@ export function SolarSummaryCards({ telemetry }: { telemetry: SolarEnergyPoint |
       <div className="solar-metric">
         <p className="text-sm text-[var(--solar-muted)]">Celkový solární proud</p>
         <p className="mt-3 text-3xl font-semibold text-[var(--solar-text)]">{display(telemetry?.solar_total_current, "A")}</p>
-        <p className="mt-2 text-sm text-[var(--solar-muted)]">Solar 1 + Solar 2, bez odhadu výkonu</p>
+        <p className="mt-2 text-sm text-[var(--solar-muted)]">Solar 1 + Solar 2, přímé proudové měření</p>
       </div>
       <div className="solar-metric">
-        <p className="text-sm text-[var(--solar-muted)]">Výkon baterie</p>
-        <p className="mt-3 text-3xl font-semibold text-[var(--solar-text)]">{display(telemetry?.battery_power_w, "W")}</p>
-        <p className="mt-2 text-sm text-[var(--solar-muted)]">{display(telemetry?.battery_voltage, "V")} · {display(telemetry?.battery_current, "A")}</p>
+        <p className="text-sm text-[var(--solar-muted)]">Proud baterie</p>
+        <p className="mt-3 text-3xl font-semibold text-[var(--solar-text)]">{display(telemetry?.battery_current, "A")}</p>
+        <p className="mt-2 text-sm text-[var(--solar-muted)]">Kladný = nabíjení · záporný = vybíjení</p>
       </div>
       <div className="solar-metric">
         <p className="text-sm text-[var(--solar-muted)]">Raspberry Pi</p>

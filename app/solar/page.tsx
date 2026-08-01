@@ -33,15 +33,17 @@ type SolarPayload = {
 };
 
 const emptySummary: SolarEnergySummary = {
-  produced_energy_wh: null,
-  consumed_energy_wh: null,
-  charged_energy_wh: 0,
-  discharged_energy_wh: 0,
-  energy_balance_wh: 0,
-  solar_max_power_w: null,
   solar1_max_current_a: null,
   solar2_max_current_a: null,
   solar_total_max_current_a: null,
+  solar1_ah: 0,
+  solar2_ah: 0,
+  solar_total_ah: 0,
+  battery_charged_ah: 0,
+  battery_discharged_ah: 0,
+  battery_net_ah: 0,
+  battery_max_charge_current_a: null,
+  battery_max_discharge_current_a: null,
   battery_voltage_min_v: null,
   battery_voltage_max_v: null,
   object_temperature_min_c: null,
@@ -224,7 +226,7 @@ export default function SolarPage() {
       {loading && !payload ? <div className="solar-skeleton h-56" aria-label="Načítám telemetrii" /> : <div className="mt-4"><OverviewMetrics telemetry={telemetry} freshness={freshness} now={now} /></div>}
 
       <nav className="solar-section-nav" aria-label="Sekce dashboardu">
-        <a href="#tok">Tok energie</a><a href="#zarizeni">Zařízení</a><a href="#souhrn">Dnešek</a><a href="#grafy">Grafy</a><a href="#senzory">Senzory</a><a href="#system">Systém</a>
+        <a href="#tok">Proudy</a><a href="#zarizeni">Zařízení</a><a href="#souhrn">Ah dnes</a><a href="#grafy">Grafy</a><a href="#senzory">Senzory</a><a href="#system">Systém</a>
       </nav>
 
       <main className="mt-4 grid gap-4">
@@ -244,8 +246,8 @@ export default function SolarPage() {
         <section id="grafy" className="scroll-mt-24 grid gap-4">
           <SolarHistoryControls value={historyRange} loading={historyLoading} onChange={setHistoryRange} />
           {historyLoading ? <><div className="solar-skeleton h-72" /><div className="solar-skeleton h-72" /></> : <>
-            <InteractiveHistoryChart history={history} series={[["solar1_power", "Solar 1", "#f59e0b"], ["solar2_power", "Solar 2", "#38bdf8"], ["solar_total_power_w", "Celkem", "#22c55e"], ["load_power", "Spotřeba", "#ef4444"]]} title="Výkon" unit="W" />
-            <InteractiveHistoryChart history={history} series={[["solar1_current", "Solar 1", "#f59e0b"], ["solar2_current", "Solar 2", "#38bdf8"], ["solar_total_current", "Součet", "#22c55e"]]} title="Proudy solárních větví" unit="A" />
+            <InteractiveHistoryChart history={history} series={[["solar1_current", "Solar 1", "#f59e0b"], ["solar2_current", "Solar 2", "#38bdf8"], ["solar_total_current", "Solární součet", "#22c55e"], ["battery_current", "Baterie", "#7c3aed"]]} title="Proudy všech měřených větví" unit="A" />
+            <InteractiveHistoryChart history={history} series={[["solar1_ah", "Solar 1", "#f59e0b"], ["solar2_ah", "Solar 2", "#38bdf8"], ["solar_total_ah", "Solární součet", "#22c55e"], ["battery_charged_ah", "Nabito do baterie", "#7c3aed"], ["battery_discharged_ah", "Odebráno z baterie", "#ef4444"]]} title="Kumulované ampérhodiny ve zvoleném období" unit="Ah" />
             <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["battery_voltage", "Napětí", "#2563eb"]]} title="Napětí baterie" unit="V" /><InteractiveHistoryChart history={history} series={[["battery_current", "Proud", "#7c3aed"]]} title="Proud baterie" unit="A" /></div>
             <SolarPanel eyebrow="Baterie" title="Procento nabití"><p className="solar-alert solar-alert--info mt-4">Historie stavu nabití zatím není dostupná. Datový model nemá údaj z BMS ani kalibrované procento.</p></SolarPanel>
             <InteractiveHistoryChart history={history} series={[["object_temperature", "Uvnitř", "#ea580c"], ["outside_temperature", "Venku", "#0284c7"], ["battery_temperature", "Baterie", "#7c3aed"], ["mppt_temperature", "MPPT", "#dc2626"]]} title="Teploty" unit="°C" />

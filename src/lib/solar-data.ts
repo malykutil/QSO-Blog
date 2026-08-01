@@ -48,29 +48,31 @@ export type TelemetryFreshness = "online" | "delayed" | "offline";
 
 export type SolarEnergyPoint = SolarTelemetry & {
   solar_total_current: number | null;
-  solar_total_power_w: number | null;
-  battery_power_w: number | null;
   battery_state: BatteryFlowState;
   ups_voltage_v: number | null;
   ups_current_a: number | null;
-  ups_power_w: number | null;
   ups_charge_percent: number | null;
   ups_state: UpsFlowState;
-  energy_charged_wh: number;
-  energy_discharged_wh: number;
-  energy_balance_wh: number;
+  solar1_ah: number;
+  solar2_ah: number;
+  solar_total_ah: number;
+  battery_charged_ah: number;
+  battery_discharged_ah: number;
+  battery_net_ah: number;
 };
 
 export type SolarEnergySummary = {
-  produced_energy_wh: number | null;
-  consumed_energy_wh: number | null;
-  charged_energy_wh: number;
-  discharged_energy_wh: number;
-  energy_balance_wh: number;
-  solar_max_power_w: number | null;
   solar1_max_current_a: number | null;
   solar2_max_current_a: number | null;
   solar_total_max_current_a: number | null;
+  solar1_ah: number;
+  solar2_ah: number;
+  solar_total_ah: number;
+  battery_charged_ah: number;
+  battery_discharged_ah: number;
+  battery_net_ah: number;
+  battery_max_charge_current_a: number | null;
+  battery_max_discharge_current_a: number | null;
   battery_voltage_min_v: number | null;
   battery_voltage_max_v: number | null;
   object_temperature_min_c: number | null;
