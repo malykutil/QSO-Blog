@@ -36,6 +36,7 @@ public class MonitorService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences preferences;
+    private JSONObject latestPayload;
     private JSONObject latestTelemetry;
     private long lastSuccessfulPoll;
     private MediaPlayer siren;
@@ -77,15 +78,19 @@ public class MonitorService extends Service {
                 ApiClient.Response response = ApiClient.request("/api/solar?range=1h&latest=1", "GET", null, null);
                 if (response.code < 200 || response.code >= 300) throw new IllegalStateException("HTTP " + response.code);
                 JSONObject payload = new JSONObject(response.body);
+                latestPayload = payload;
                 latestTelemetry = payload.optJSONObject("telemetry");
                 lastSuccessfulPoll = System.currentTimeMillis();
                 preferences.edit().putLong("last_successful_poll", lastSuccessfulPoll).apply();
                 evaluateState(payload, latestTelemetry);
-                maybePostHourlySummary();
-                updateMonitorNotification("Online • poslední kontrola právě teď");
+                maybePostHourlySummary(payload);
+                updateMonitorNotification("Online • aktualizováno právě teď", payload, latestTelemetry);
             } catch (Exception exception) {
                 long age = System.currentTimeMillis() - lastSuccessfulPoll;
-                updateMonitorNotification(age > OFFLINE_LIMIT_MS ? "VAROVÁNÍ • přes 5 minut bez dat" : "Čekám na spojení se serverem");
+                updateMonitorNotification(
+                    age > OFFLINE_LIMIT_MS ? "VAROVÁNÍ • přes 5 minut bez nových dat" : "Čekám na spojení se serverem",
+                    latestPayload,
+                    latestTelemetry);
                 if (age > OFFLINE_LIMIT_MS) activateAlarm("offline", "Dohled je bez spojení", "Telefon déle než 5 minut nezískal telemetrii. Zkontroluj internet, Raspberry Pi a napájení.");
             } finally {
                 handler.postDelayed(this::poll, POLL_INTERVAL_MS);
@@ -187,18 +192,18 @@ public class MonitorService extends Service {
         alarmWakeLock = null;
     }
 
-    private void maybePostHourlySummary() {
+    private void maybePostHourlySummary(JSONObject payload) {
         long now = System.currentTimeMillis();
         long nextSummary = preferences.getLong("next_summary_at", now + HOUR_MS);
         if (now < nextSummary || latestTelemetry == null) return;
-        NotificationHelper.postHourlySummary(this, latestTelemetry);
+        NotificationHelper.postHourlySummary(this, payload, latestTelemetry);
         preferences.edit().putLong("next_summary_at", ((now / HOUR_MS) + 1) * HOUR_MS).apply();
     }
 
-    private void updateMonitorNotification(String text) {
+    private void updateMonitorNotification(String text, JSONObject payload, JSONObject telemetry) {
         getSystemService(NotificationManager.class).notify(
             NotificationHelper.MONITOR_NOTIFICATION_ID,
-            NotificationHelper.monitorNotification(this, text));
+            NotificationHelper.monitorNotification(this, text, payload, telemetry));
     }
 
     private static boolean isTelemetryOffline(String timestamp) {

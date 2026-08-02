@@ -14,6 +14,7 @@ import android.provider.Settings;
 
 import org.json.JSONObject;
 
+import java.util.Iterator;
 import java.util.Locale;
 
 final class NotificationHelper {
@@ -53,44 +54,97 @@ final class NotificationHelper {
     }
 
     static Notification monitorNotification(Context context, String status) {
+        return monitorNotification(context, status, null, null);
+    }
+
+    static Notification monitorNotification(Context context, String status, JSONObject payload, JSONObject telemetry) {
         Intent open = new Intent(context, MainActivity.class);
         PendingIntent pendingOpen = PendingIntent.getActivity(context, 1, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        boolean alarm = alarmActive(payload, telemetry);
+        boolean online = status.startsWith("Online");
+        String system = (alarm ? "POPLACH" : "Bez poplachu") + " • " + relayStatus(payload);
+        String battery = "Baterie " + value(telemetry, "battery_voltage", "V", 2)
+            + " • " + value(telemetry, "battery_current", "A", 2)
+            + " • " + value(telemetry, "battery_power_w", "W", 1)
+            + " • " + batteryState(telemetry);
+        String load = "Zátěž " + valueAny(telemetry, "V", 2, "load_voltage_v", "solar2_voltage")
+            + " • " + valueAny(telemetry, "A", 2, "load_current_a", "solar2_current")
+            + " • " + valueAny(telemetry, "W", 1, "load_power_w", "load_power");
+        String temperatures = "Teploty: objekt " + value(telemetry, "object_temperature", "°C", 1)
+            + " • baterie " + value(telemetry, "battery_temperature", "°C", 1)
+            + " • MPPT " + value(telemetry, "mppt_temperature", "°C", 1);
+        String air = "MQ-9 " + value(telemetry, "mq9_raw", "RAW", 0) + (alarm ? " • KRITICKÝ STAV" : " • v pořádku");
+        String ups = "UPS " + value(telemetry, "ups_charge_percent", "%", 0)
+            + " • " + value(telemetry, "ups_current_a", "A", 3)
+            + " • " + upsState(telemetry);
+
+        Notification.InboxStyle style = new Notification.InboxStyle()
+            .setBigContentTitle(alarm ? "OK2KZB • AKTIVNÍ POPLACH" : "OK2KZB • aktuální stav")
+            .addLine(status)
+            .addLine(system);
+        if (telemetry != null) {
+            style.addLine(battery).addLine(load).addLine(temperatures).addLine(air).addLine(ups);
+        }
+
+        String compact = telemetry == null || !online
+            ? status
+            : (alarm ? "POPLACH" : "Bez poplachu") + " • baterie "
+                + value(telemetry, "battery_current", "A", 2) + " • zátěž "
+                + valueAny(telemetry, "W", 1, "load_power_w", "load_power");
         return builder(context, CHANNEL_MONITOR)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle("OK2KZB • bezpečnostní dohled")
-            .setContentText(status)
+            .setColor(alarm ? Color.RED : online ? Color.rgb(34, 197, 94) : Color.rgb(245, 158, 11))
+            .setContentTitle(alarm ? "OK2KZB • POPLACH" : online ? "OK2KZB • systém online" : "OK2KZB • čekám na spojení")
+            .setContentText(compact)
+            .setSubText(status)
+            .setStyle(style)
             .setContentIntent(pendingOpen)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .build();
     }
 
-    static void postHourlySummary(Context context, JSONObject telemetry) {
+    static void postHourlySummary(Context context, JSONObject payload, JSONObject telemetry) {
+        boolean alarm = alarmActive(payload, telemetry);
+        String system = (alarm ? "POPLACH AKTIVNÍ" : "Systém bez poplachu") + " • " + relayStatus(payload)
+            + " • MQ-9 " + value(telemetry, "mq9_raw", "RAW", 0);
         String temperatures = String.format(Locale.US, "Objekt %s • Baterie %s • MPPT %s • Venku %s",
             value(telemetry, "object_temperature", "°C", 1),
             value(telemetry, "battery_temperature", "°C", 1),
             value(telemetry, "mppt_temperature", "°C", 1),
             value(telemetry, "outside_temperature", "°C", 1));
-        String currents = String.format(Locale.US, "Solární vstup %s • Zátěž %s",
-            value(telemetry, "solar1_current", "A", 2),
-            value(telemetry, "solar2_current", "A", 2));
-        double batteryCurrent = number(telemetry, "battery_current");
-        String batteryState = Double.isNaN(batteryCurrent) ? "neznámý stav" : batteryCurrent > 0.1 ? "nabíjení" : batteryCurrent < -0.1 ? "vybíjení" : "klid";
-        String battery = "Baterie " + value(telemetry, "battery_current", "A", 2) + " • " + batteryState;
-        String ups = "UPS " + value(telemetry, "ups_current_a", "A", 3) + " • " + value(telemetry, "ups_charge_percent", "%", 0);
+        String humidity = "Vlhkost: objekt " + value(telemetry, "object_humidity", "%", 1)
+            + " • MPPT " + value(telemetry, "mppt_humidity", "%", 1);
+        String solar = "Solární vstup " + value(telemetry, "solar1_current", "A", 2);
+        String batteryState = batteryState(telemetry);
+        String battery = "Baterie " + value(telemetry, "battery_voltage", "V", 2)
+            + " • " + value(telemetry, "battery_current", "A", 2)
+            + " • " + value(telemetry, "battery_power_w", "W", 1)
+            + " • " + batteryState;
+        String load = "Zátěž " + valueAny(telemetry, "V", 2, "load_voltage_v", "solar2_voltage")
+            + " • " + valueAny(telemetry, "A", 2, "load_current_a", "solar2_current")
+            + " • " + valueAny(telemetry, "W", 1, "load_power_w", "load_power");
+        String ups = "UPS " + value(telemetry, "ups_charge_percent", "%", 0)
+            + " • " + value(telemetry, "ups_current_a", "A", 3)
+            + " • " + upsState(telemetry);
 
         Notification.InboxStyle style = new Notification.InboxStyle()
             .setBigContentTitle("Hodinový souhrn solárního systému")
+            .addLine(system)
             .addLine(temperatures)
-            .addLine(currents)
+            .addLine(humidity)
+            .addLine(solar)
             .addLine(battery)
+            .addLine(load)
             .addLine(ups);
         PendingIntent open = PendingIntent.getActivity(context, 2, new Intent(context, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = builder(context, CHANNEL_SUMMARY)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .setContentTitle("Solární souhrn • " + batteryState)
-            .setContentText(temperatures)
+            .setColor(alarm ? Color.RED : Color.rgb(34, 197, 94))
+            .setContentTitle(alarm ? "Solární souhrn • POPLACH" : "Solární souhrn • " + batteryState)
+            .setContentText(system)
             .setStyle(style)
             .setContentIntent(open)
             .setAutoCancel(true)
@@ -142,6 +196,46 @@ final class NotificationHelper {
         double value = number(object, key);
         if (Double.isNaN(value)) return "—";
         return String.format(Locale.US, "% ." + decimals + "f %s", value, unit).trim();
+    }
+
+    private static String valueAny(JSONObject object, String unit, int decimals, String... keys) {
+        for (String key : keys) {
+            double value = number(object, key);
+            if (!Double.isNaN(value)) return String.format(Locale.US, "% ." + decimals + "f %s", value, unit).trim();
+        }
+        return "—";
+    }
+
+    private static String batteryState(JSONObject telemetry) {
+        double current = number(telemetry, "battery_current");
+        return Double.isNaN(current) ? "neznámý stav" : current > 0.1 ? "nabíjení" : current < -0.1 ? "vybíjení" : "klid";
+    }
+
+    private static String upsState(JSONObject telemetry) {
+        String state = telemetry == null ? "" : telemetry.optString("ups_state", "");
+        if ("charging".equals(state)) return "nabíjení";
+        if ("discharging".equals(state)) return "vybíjení";
+        if ("idle".equals(state)) return "klid";
+        return "neznámý stav";
+    }
+
+    private static boolean alarmActive(JSONObject payload, JSONObject telemetry) {
+        return (payload != null && payload.optBoolean("alarmActive", false))
+            || (telemetry != null && telemetry.optBoolean("mq9_alarm", false));
+    }
+
+    private static String relayStatus(JSONObject payload) {
+        JSONObject relays = payload == null ? null : payload.optJSONObject("relays");
+        if (relays == null) return "stav relé neznámý";
+        int active = 0;
+        int total = 0;
+        Iterator<String> keys = relays.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            total++;
+            if (relays.optBoolean(key, false)) active++;
+        }
+        return active + "/" + total + " relé zapnuto";
     }
 
     private static double number(JSONObject object, String key) {

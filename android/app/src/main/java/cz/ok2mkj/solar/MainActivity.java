@@ -25,6 +25,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -72,6 +73,11 @@ public class MainActivity extends Activity {
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(16), 0, dp(8), 0);
         toolbar.setBackgroundColor(Color.rgb(7, 17, 13));
+
+        Button navigation = toolbarButton("⋮");
+        navigation.setContentDescription("Otevřít navigaci aplikace");
+        navigation.setOnClickListener(this::showNavigationMenu);
+        toolbar.addView(navigation, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
@@ -150,6 +156,55 @@ public class MainActivity extends Activity {
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setAllCaps(false);
         return button;
+    }
+
+    private void showNavigationMenu(View anchor) {
+        PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add(0, 1, 0, "Dashboard");
+        popup.getMenu().add(0, 2, 1, "Proudy a výkony");
+        popup.getMenu().add(0, 3, 2, "Grafy");
+        popup.getMenu().add(0, 4, 3, "Ovládání");
+        popup.getMenu().add(0, 5, 4, "Dnešní souhrn");
+        popup.getMenu().add(0, 6, 5, "Senzory");
+        popup.getMenu().add(0, 7, 6, "Stav systému");
+        popup.getMenu().add(0, 8, 7, "Nastavení oznámení");
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1:
+                    openSection("");
+                    return true;
+                case 2:
+                    openSection("tok");
+                    return true;
+                case 3:
+                    openSection("grafy");
+                    return true;
+                case 4:
+                    openSection("zarizeni");
+                    return true;
+                case 5:
+                    openSection("souhrn");
+                    return true;
+                case 6:
+                    openSection("senzory");
+                    return true;
+                case 7:
+                    openSection("system");
+                    return true;
+                case 8:
+                    showSafetySettings();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        popup.show();
+    }
+
+    private void openSection(String section) {
+        progress.setVisibility(View.VISIBLE);
+        String suffix = section.isEmpty() ? "" : "#" + section;
+        webView.loadUrl(BuildConfig.SOLAR_BASE_URL + "/solar" + suffix);
     }
 
     private void showLoadingPage() {
