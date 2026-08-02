@@ -11,7 +11,7 @@ import { isMq9AlarmResetMarker } from "@/src/lib/mq9-alarm";
 export const dynamic = "force-dynamic";
 
 const legacySolarTelemetryFields =
-  "battery_voltage,solar1_current,solar2_current,battery_current,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,mppt_temperature,recorded_at";
+  "solar1_voltage,solar2_voltage,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,battery_voltage,solar1_current,solar2_current,battery_current,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,outside_temperature,outside_pressure,mq9_raw,mq9_voltage,mppt_temperature,recorded_at";
 
 const extendedArduinoFields = [
   "arduino_uptime_ms",

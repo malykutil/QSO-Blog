@@ -36,12 +36,17 @@ const emptySummary: SolarEnergySummary = {
   solar1_max_current_a: null,
   solar2_max_current_a: null,
   solar_total_max_current_a: null,
+  load_max_current_a: null,
   solar1_ah: 0,
   solar2_ah: 0,
   solar_total_ah: 0,
+  load_ah: 0,
   battery_charged_ah: 0,
   battery_discharged_ah: 0,
   battery_net_ah: 0,
+  battery_charged_wh: 0,
+  battery_discharged_wh: 0,
+  load_energy_wh: 0,
   battery_max_charge_current_a: null,
   battery_max_discharge_current_a: null,
   battery_voltage_min_v: null,
@@ -226,7 +231,7 @@ export default function SolarPage() {
       {loading && !payload ? <div className="solar-skeleton h-56" aria-label="Načítám telemetrii" /> : <div className="mt-4"><OverviewMetrics telemetry={telemetry} freshness={freshness} now={now} /></div>}
 
       <nav className="solar-section-nav" aria-label="Sekce dashboardu">
-        <a href="#tok">Proudy</a><a href="#zarizeni">Zařízení</a><a href="#souhrn">Ah dnes</a><a href="#grafy">Grafy</a><a href="#senzory">Senzory</a><a href="#system">Systém</a>
+        <a href="#tok">Proudy a výkony</a><a href="#zarizeni">Zařízení</a><a href="#souhrn">Dnešní souhrn</a><a href="#grafy">Grafy</a><a href="#senzory">Senzory</a><a href="#system">Systém</a>
       </nav>
 
       <main className="mt-4 grid gap-4">
@@ -246,12 +251,13 @@ export default function SolarPage() {
         <section id="grafy" className="scroll-mt-24 grid gap-4">
           <SolarHistoryControls value={historyRange} loading={historyLoading} onChange={setHistoryRange} />
           {historyLoading ? <><div className="solar-skeleton h-72" /><div className="solar-skeleton h-72" /></> : <>
-            <InteractiveHistoryChart history={history} series={[["solar1_current", "Solar 1", "#f59e0b"], ["solar2_current", "Solar 2", "#38bdf8"], ["solar_total_current", "Solární součet", "#22c55e"], ["battery_current", "Baterie", "#7c3aed"]]} title="Proudy všech měřených větví" unit="A" />
-            <InteractiveHistoryChart history={history} series={[["solar1_ah", "Solar 1", "#f59e0b"], ["solar2_ah", "Solar 2", "#38bdf8"], ["solar_total_ah", "Solární součet", "#22c55e"], ["battery_charged_ah", "Nabito do baterie", "#7c3aed"], ["battery_discharged_ah", "Odebráno z baterie", "#ef4444"]]} title="Kumulované ampérhodiny ve zvoleném období" unit="Ah" />
-            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["battery_voltage", "Napětí", "#2563eb"]]} title="Napětí baterie" unit="V" /><InteractiveHistoryChart history={history} series={[["battery_current", "Proud", "#7c3aed"]]} title="Proud baterie" unit="A" /></div>
+            <InteractiveHistoryChart history={history} series={[["solar1_current", "Solární vstup", "#f59e0b"], ["load_current_a", "Zátěž", "#38bdf8"], ["battery_current", "Baterie", "#7c3aed"]]} title="Proudy všech měřených větví" unit="A" />
+            <InteractiveHistoryChart history={history} series={[["battery_power_w", "Výkon baterie", "#7c3aed"], ["load_power_w", "Výkon zátěže", "#ef4444"]]} title="Výkon do baterie a do zátěže" unit="W" />
+            <InteractiveHistoryChart history={history} series={[["solar1_ah", "Solární vstup", "#f59e0b"], ["load_ah", "Zátěž", "#38bdf8"], ["battery_charged_ah", "Nabito do baterie", "#7c3aed"], ["battery_discharged_ah", "Odebráno z baterie", "#ef4444"]]} title="Kumulované ampérhodiny ve zvoleném období" unit="Ah" />
+            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["battery_voltage", "Baterie", "#2563eb"], ["load_voltage_v", "Zátěž", "#dc2626"]]} title="Napětí baterie a zátěže" unit="V" /><InteractiveHistoryChart history={history} series={[["battery_current", "Baterie", "#7c3aed"], ["load_current_a", "Zátěž", "#38bdf8"]]} title="Proud baterie a zátěže" unit="A" /></div>
             <SolarPanel eyebrow="Baterie" title="Procento nabití"><p className="solar-alert solar-alert--info mt-4">Historie stavu nabití zatím není dostupná. Datový model nemá údaj z BMS ani kalibrované procento.</p></SolarPanel>
             <InteractiveHistoryChart history={history} series={[["object_temperature", "Uvnitř", "#ea580c"], ["outside_temperature", "Venku", "#0284c7"], ["battery_temperature", "Baterie", "#7c3aed"], ["mppt_temperature", "MPPT", "#dc2626"]]} title="Teploty" unit="°C" />
-            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["object_humidity", "Vlhkost uvnitř", "#0891b2"]]} title="Vlhkost" unit="%" /><InteractiveHistoryChart history={history} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
+            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["object_humidity", "Uvnitř · D11", "#0891b2"], ["mppt_humidity", "MPPT · D12", "#7c3aed"]]} title="Vlhkost DHT11" unit="%" /><InteractiveHistoryChart history={history} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
             <InteractiveHistoryChart history={history} series={[["mq9_raw", "MQ-9", "#f97316"]]} title="CO a hořlavé plyny (MQ-9)" unit="RAW" referenceLines={[[MQ9_CRITICAL_RAW + 1, "Hranice poplachu", "#dc2626"]]} />
           </>}
         </section>

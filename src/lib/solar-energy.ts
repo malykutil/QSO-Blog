@@ -36,12 +36,14 @@ function finite(value: number | null | undefined) {
 
 export function calculateSolarTotalCurrent(
   solar1Current: number | null | undefined,
-  solar2Current: number | null | undefined,
 ) {
-  const solar1 = finite(solar1Current);
-  const solar2 = finite(solar2Current);
-  if (solar1 === null && solar2 === null) return null;
-  return (solar1 ?? 0) + (solar2 ?? 0);
+  return finite(solar1Current);
+}
+
+function calculatePower(voltage: number | null | undefined, current: number | null | undefined) {
+  const safeVoltage = finite(voltage);
+  const safeCurrent = finite(current);
+  return safeVoltage === null || safeCurrent === null ? null : safeVoltage * safeCurrent;
 }
 
 export function getBatteryFlowState(
@@ -65,13 +67,25 @@ export function getTelemetryFreshness(recordedAt: string | null | undefined, now
 }
 
 export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
-  const solarTotalCurrent = calculateSolarTotalCurrent(sample.solar1_current, sample.solar2_current);
+  const solarTotalCurrent = calculateSolarTotalCurrent(sample.solar1_current);
+  const loadVoltage = finite(sample.solar2_voltage);
+  const loadCurrent = finite(sample.solar2_current);
+  const batteryPower = calculatePower(sample.battery_voltage, sample.battery_current);
+  const measuredLoadPower = finite(sample.load_power);
+  const loadPower = measuredLoadPower ?? calculatePower(loadVoltage, loadCurrent);
   // Legacy INA219 columns carry the dedicated Waveshare UPS HAT values from RPi.
   const upsVoltage = finite(sample.ina219_shunt_voltage_mv);
   const upsCurrent = finite(sample.ina219_current);
   return {
     ...sample,
+    // solar1_voltage je DB kompatibilni transport vlhkosti DHT11 na D12;
+    // napeti solarniho panelu tato instalace nemeri.
+    mppt_humidity: finite(sample.solar1_voltage),
     solar_total_current: solarTotalCurrent,
+    load_voltage_v: loadVoltage,
+    load_current_a: loadCurrent,
+    battery_power_w: batteryPower,
+    load_power_w: loadPower,
     battery_state: getBatteryFlowState(sample.battery_voltage, sample.battery_current),
     ups_voltage_v: upsVoltage,
     ups_current_a: upsCurrent,
@@ -80,9 +94,13 @@ export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
     solar1_ah: 0,
     solar2_ah: 0,
     solar_total_ah: 0,
+    load_ah: 0,
     battery_charged_ah: 0,
     battery_discharged_ah: 0,
     battery_net_ah: 0,
+    battery_charged_wh: 0,
+    battery_discharged_wh: 0,
+    load_energy_wh: 0,
   };
 }
 
@@ -101,9 +119,12 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
   let activeChargingMs = 0;
   let skippedGaps = 0;
   let solar1Ah = 0;
-  let solar2Ah = 0;
+  let loadAh = 0;
   let batteryChargedAh = 0;
   let batteryDischargedAh = 0;
+  let batteryChargedWh = 0;
+  let batteryDischargedWh = 0;
+  let loadEnergyWh = 0;
 
   for (let index = 1; index < history.length; index += 1) {
     const previous = history[index - 1];
@@ -113,11 +134,15 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     if (elapsedMs <= 0 || elapsedMs > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs) {
       skippedGaps += elapsedMs > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs ? 1 : 0;
       current.solar1_ah = solar1Ah;
-      current.solar2_ah = solar2Ah;
-      current.solar_total_ah = solar1Ah + solar2Ah;
+      current.solar2_ah = loadAh;
+      current.solar_total_ah = solar1Ah;
+      current.load_ah = loadAh;
       current.battery_charged_ah = batteryChargedAh;
       current.battery_discharged_ah = batteryDischargedAh;
       current.battery_net_ah = batteryChargedAh - batteryDischargedAh;
+      current.battery_charged_wh = batteryChargedWh;
+      current.battery_discharged_wh = batteryDischargedWh;
+      current.load_energy_wh = loadEnergyWh;
       continue;
     }
 
@@ -125,13 +150,21 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     if (previous.solar1_current !== null && current.solar1_current !== null) {
       solar1Ah += Math.max(0, (previous.solar1_current + current.solar1_current) / 2) * intervalHours;
     }
-    if (previous.solar2_current !== null && current.solar2_current !== null) {
-      solar2Ah += Math.max(0, (previous.solar2_current + current.solar2_current) / 2) * intervalHours;
+    if (previous.load_current_a !== null && current.load_current_a !== null) {
+      loadAh += Math.max(0, (previous.load_current_a + current.load_current_a) / 2) * intervalHours;
     }
     if (previous.battery_current !== null && current.battery_current !== null) {
       const intervalAh = ((previous.battery_current + current.battery_current) / 2) * intervalHours;
       if (intervalAh > 0) batteryChargedAh += intervalAh;
       if (intervalAh < 0) batteryDischargedAh += Math.abs(intervalAh);
+    }
+    if (previous.battery_power_w !== null && current.battery_power_w !== null) {
+      const intervalWh = ((previous.battery_power_w + current.battery_power_w) / 2) * intervalHours;
+      if (intervalWh > 0) batteryChargedWh += intervalWh;
+      if (intervalWh < 0) batteryDischargedWh += Math.abs(intervalWh);
+    }
+    if (previous.load_power_w !== null && current.load_power_w !== null) {
+      loadEnergyWh += Math.max(0, (previous.load_power_w + current.load_power_w) / 2) * intervalHours;
     }
 
     const previousSolarActive =
@@ -143,11 +176,15 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     if (previousSolarActive || currentSolarActive) activeChargingMs += elapsedMs;
 
     current.solar1_ah = solar1Ah;
-    current.solar2_ah = solar2Ah;
-    current.solar_total_ah = solar1Ah + solar2Ah;
+    current.solar2_ah = loadAh;
+    current.solar_total_ah = solar1Ah;
+    current.load_ah = loadAh;
     current.battery_charged_ah = batteryChargedAh;
     current.battery_discharged_ah = batteryDischargedAh;
     current.battery_net_ah = batteryChargedAh - batteryDischargedAh;
+    current.battery_charged_wh = batteryChargedWh;
+    current.battery_discharged_wh = batteryDischargedWh;
+    current.load_energy_wh = loadEnergyWh;
   }
 
   const numeric = (key: keyof SolarEnergyPoint) =>
@@ -155,7 +192,7 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
       .map((sample) => sample[key])
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const solar1Values = numeric("solar1_current");
-  const solar2Values = numeric("solar2_current");
+  const loadValues = numeric("load_current_a");
   const solarTotalValues = numeric("solar_total_current");
   const batteryCurrentValues = numeric("battery_current");
   const batteryVoltageValues = numeric("battery_voltage");
@@ -165,14 +202,19 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     history,
     summary: {
       solar1_max_current_a: solar1Values.length ? Math.max(...solar1Values) : null,
-      solar2_max_current_a: solar2Values.length ? Math.max(...solar2Values) : null,
+      solar2_max_current_a: loadValues.length ? Math.max(...loadValues) : null,
       solar_total_max_current_a: solarTotalValues.length ? Math.max(...solarTotalValues) : null,
+      load_max_current_a: loadValues.length ? Math.max(...loadValues) : null,
       solar1_ah: solar1Ah,
-      solar2_ah: solar2Ah,
-      solar_total_ah: solar1Ah + solar2Ah,
+      solar2_ah: loadAh,
+      solar_total_ah: solar1Ah,
+      load_ah: loadAh,
       battery_charged_ah: batteryChargedAh,
       battery_discharged_ah: batteryDischargedAh,
       battery_net_ah: batteryChargedAh - batteryDischargedAh,
+      battery_charged_wh: batteryChargedWh,
+      battery_discharged_wh: batteryDischargedWh,
+      load_energy_wh: loadEnergyWh,
       battery_max_charge_current_a: batteryCurrentValues.some((value) => value > 0) ? Math.max(...batteryCurrentValues.filter((value) => value > 0)) : null,
       battery_max_discharge_current_a: batteryCurrentValues.some((value) => value < 0) ? Math.abs(Math.min(...batteryCurrentValues.filter((value) => value < 0))) : null,
       battery_voltage_min_v: batteryVoltageValues.length ? Math.min(...batteryVoltageValues) : null,

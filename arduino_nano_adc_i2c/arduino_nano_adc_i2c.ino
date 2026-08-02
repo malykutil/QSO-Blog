@@ -2,13 +2,18 @@
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_INA219.h>
+#include <DHT.h>
 
 // Zapojeni podle skutecne instalace.
 constexpr uint8_t MQ9_PIN = A0;
 constexpr uint8_t ACS_PINS[] = {A1, A2, A3};
+constexpr uint8_t DHT_OBJECT_PIN = 11;
+constexpr uint8_t DHT_MPPT_PIN = 12;
+constexpr uint8_t DHT_TYPE = DHT11;
 constexpr uint8_t BMP_BATTERY_ADDRESS = 0x76;
 constexpr uint8_t BMP_OUTSIDE_ADDRESS = 0x77;
-constexpr uint8_t INA_I2C_ADDRESS = 0x40;
+constexpr uint8_t INA_BATTERY_I2C_ADDRESS = 0x40;
+constexpr uint8_t INA_LOAD_I2C_ADDRESS = 0x45;
 
 constexpr unsigned long SERIAL_BAUD = 115200;
 constexpr unsigned long SAMPLE_INTERVAL_MS = 2000;
@@ -20,7 +25,9 @@ constexpr uint8_t MAX_I2C_DEVICES = 8;
 // Pro ACS712-5A pouzij citlivost 185, pro ACS712-30A 66 mV/A.
 constexpr float ACS_ZERO_MV[] = {2490.39F, 2456.83F, 2506.68F};
 constexpr float ACS_SENSITIVITY_MV_PER_A[] = {100.0F, 100.0F, 100.0F};
-constexpr float ACS_ZERO_DEADBAND_A = 0.10F;
+// A2 (zatez) ma v klidu o neco vyssi sum; samostatne pasmo 0,15 A zabrani
+// falesnemu vykonu pri odpojene zatezi.
+constexpr float ACS_ZERO_DEADBAND_A[] = {0.10F, 0.15F, 0.10F};
 // Odpojeny INA219 v teto instalaci vraci priblizne 1 V. Protoze se pouziva
 // pouze jako voltmetr, hodnoty do teto meze zverejnime jako nulu.
 constexpr float INA_DISCONNECTED_MAX_V = 1.10F;
@@ -28,11 +35,15 @@ constexpr float ADC_REFERENCE_MV = 5000.0F;
 
 Adafruit_BMP280 bmpBattery;
 Adafruit_BMP280 bmpOutside;
-Adafruit_INA219 ina219(INA_I2C_ADDRESS);
+Adafruit_INA219 inaBattery(INA_BATTERY_I2C_ADDRESS);
+Adafruit_INA219 inaLoad(INA_LOAD_I2C_ADDRESS);
+DHT dhtObject(DHT_OBJECT_PIN, DHT_TYPE);
+DHT dhtMppt(DHT_MPPT_PIN, DHT_TYPE);
 
 bool bmpBatteryReady = false;
 bool bmpOutsideReady = false;
-bool ina219Ready = false;
+bool inaBatteryReady = false;
+bool inaLoadReady = false;
 unsigned long lastSampleMs = 0;
 unsigned long lastSensorRetryMs = 0;
 uint8_t i2cAddresses[MAX_I2C_DEVICES];
@@ -53,7 +64,7 @@ float rawToMillivolts(uint16_t raw) {
 
 float acsCurrent(uint8_t channel, float millivolts) {
   const float current = (millivolts - ACS_ZERO_MV[channel]) / ACS_SENSITIVITY_MV_PER_A[channel];
-  return fabs(current) <= ACS_ZERO_DEADBAND_A ? 0.0F : current;
+  return fabs(current) <= ACS_ZERO_DEADBAND_A[channel] ? 0.0F : current;
 }
 
 void printFloatOrNull(float value, uint8_t digits) {
@@ -82,9 +93,18 @@ void detectSensors() {
   if (!bmpOutsideReady) {
     bmpOutsideReady = bmpOutside.begin(BMP_OUTSIDE_ADDRESS);
   }
-  if (!ina219Ready) {
-    ina219Ready = ina219.begin(&Wire);
+  if (!inaBatteryReady) {
+    inaBatteryReady = inaBattery.begin(&Wire);
   }
+  if (!inaLoadReady) {
+    inaLoadReady = inaLoad.begin(&Wire);
+  }
+}
+
+float voltageOrZero(Adafruit_INA219 &sensor, bool ready) {
+  if (!ready) return NAN;
+  const float voltage = sensor.getBusVoltage_V();
+  return !isnan(voltage) && voltage <= INA_DISCONNECTED_MAX_V ? 0.0F : voltage;
 }
 
 void emitTelemetry() {
@@ -105,14 +125,12 @@ void emitTelemetry() {
   const float batteryPressure = bmpBatteryReady ? bmpBattery.readPressure() / 100.0F : NAN;
   const float outsideTemperature = bmpOutsideReady ? bmpOutside.readTemperature() : NAN;
   const float outsidePressure = bmpOutsideReady ? bmpOutside.readPressure() / 100.0F : NAN;
-  float inaBusVoltage = ina219Ready ? ina219.getBusVoltage_V() : NAN;
-  if (!isnan(inaBusVoltage) && inaBusVoltage <= INA_DISCONNECTED_MAX_V) {
-    inaBusVoltage = 0.0F;
-  }
-  // INA219 zde slouzi pouze jako voltmetr. Proud a vykon meri ACS712.
-  const float inaShuntVoltage = NAN;
-  const float inaCurrent = NAN;
-  const float inaPower = NAN;
+  const float objectHumidity = dhtObject.readHumidity();
+  const float objectTemperature = dhtObject.readTemperature();
+  const float mpptHumidity = dhtMppt.readHumidity();
+  const float mpptTemperature = dhtMppt.readTemperature();
+  const float batteryVoltage = voltageOrZero(inaBattery, inaBatteryReady);
+  const float loadVoltage = voltageOrZero(inaLoad, inaLoadReady);
 
   Serial.print(F("{\"type\":\"qso_telemetry\",\"version\":1,\"uptime_ms\":"));
   Serial.print(millis());
@@ -142,20 +160,28 @@ void emitTelemetry() {
   printFloatOrNull(outsideTemperature, 2);
   Serial.print(F(",\"outside_pressure\":"));
   printFloatOrNull(outsidePressure, 2);
+  Serial.print(F(",\"object_temperature\":"));
+  printFloatOrNull(objectTemperature, 1);
+  Serial.print(F(",\"object_humidity\":"));
+  printFloatOrNull(objectHumidity, 1);
+  Serial.print(F(",\"mppt_temperature\":"));
+  printFloatOrNull(mpptTemperature, 1);
+  Serial.print(F(",\"mppt_humidity\":"));
+  printFloatOrNull(mpptHumidity, 1);
   Serial.print(F(",\"ina219_bus_voltage\":"));
-  printFloatOrNull(inaBusVoltage, 3);
-  Serial.print(F(",\"ina219_shunt_voltage_mv\":"));
-  printFloatOrNull(inaShuntVoltage, 3);
-  Serial.print(F(",\"ina219_current\":"));
-  printFloatOrNull(inaCurrent, 3);
-  Serial.print(F(",\"ina219_power\":"));
-  printFloatOrNull(inaPower, 3);
+  printFloatOrNull(batteryVoltage, 3);
+  Serial.print(F(",\"battery_voltage\":"));
+  printFloatOrNull(batteryVoltage, 3);
+  Serial.print(F(",\"load_voltage\":"));
+  printFloatOrNull(loadVoltage, 3);
   Serial.print(F(",\"sensors\":{\"bmp_0x76\":"));
   Serial.print(bmpBatteryReady ? F("true") : F("false"));
   Serial.print(F(",\"bmp_0x77\":"));
   Serial.print(bmpOutsideReady ? F("true") : F("false"));
   Serial.print(F(",\"ina219_0x40\":"));
-  Serial.print(ina219Ready ? F("true") : F("false"));
+  Serial.print(inaBatteryReady ? F("true") : F("false"));
+  Serial.print(F(",\"ina219_0x45\":"));
+  Serial.print(inaLoadReady ? F("true") : F("false"));
   Serial.print(F("},\"i2c_addresses\":["));
   for (uint8_t index = 0; index < i2cDeviceCount; index++) {
     if (index > 0) Serial.print(',');
@@ -168,6 +194,8 @@ void setup() {
   Serial.begin(SERIAL_BAUD);
   Wire.begin();
   Wire.setClock(100000);
+  dhtObject.begin();
+  dhtMppt.begin();
   detectSensors();
   emitTelemetry();
   lastSampleMs = millis();

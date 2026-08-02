@@ -8,14 +8,18 @@ Arduino Nano čte analogová i I²C čidla. Raspberry Pi je připojené pouze p�
 | Zařízení | Pin / sběrnice | I²C adresa | Webová hodnota |
 |---|---|---:|---|
 | MQ-9 AO | A0 | – | MQ-9 RAW a napětí |
-| ACS712 č. 1 | A1 | – | Solar 1 proud |
-| ACS712 č. 2 | A2 | – | Solar 2 proud |
+| ACS712 č. 1 | A1 | – | Solární vstupní proud |
+| ACS712 č. 2 | A2 | – | Proud zátěže (API pole `solar2_current`) |
 | ACS712 č. 3 | A3 | – | Proud baterie |
+| DHT11 v objektu | D11 | – | Teplota a vlhkost v objektu |
+| DHT11 u MPPT | D12 | – | Teplota a vlhkost u MPPT |
 | BMP280 u baterie | A4/SDA, A5/SCL | 0x76 | Teplota baterie |
 | BMP280 venku | A4/SDA, A5/SCL | 0x77 | Venkovní teplota a tlak |
-| INA219 | A4/SDA, A5/SCL | 0x40 | Napětí baterie |
+| INA219 baterie | A4/SDA, A5/SCL | 0x40 | Napětí baterie |
+| INA219 zátěž | A4/SDA, A5/SCL | 0x45 | Napětí zátěže |
 
-Na jednom I²C busu musí mít oba BMP280 rozdílné adresy. U jednoho modulu nastav
+Na jednom I²C busu musí mít oba BMP280 i oba INA219 rozdílné adresy. Aktuálně
+byly ověřeny adresy `0x40`, `0x45`, `0x76` a `0x77`. U jednoho BMP280 nastav
 SDO/ADDR na GND (0x76), u druhého na VCC (0x77). Pokud modul adresu změnit
 neumí, je potřeba I²C multiplexer. Všechna čidla musí mít společnou zem.
 
@@ -23,18 +27,19 @@ Pozor na napájecí napětí konkrétních breakout modulů. Samotné BMP280 a I
 jsou 3,3V součástky; připojení k 5V Nano je bezpečné jen u modulů s potřebným
 regulátorem/převodem úrovní. Analogové výstupy do A0–A3 nesmí překročit 5 V.
 
-`VIN+` INA219 připoj na kladný pól zdroje a `VIN-` směrem k zátěži. Zdroj
+`VIN+` INA219 připoj na kladný pól měřené větve a `VIN-` směrem k zátěži. Zdroj
 nezapojuj obráceně.
 
-Přímo na RPi jsou dvě čidla DHT11:
+Oba DHT11 jsou napájené z Arduino Nano a mají společnou zem. Pokud modul nemá
+vlastní pull-up rezistor, přidej mezi DATA a 5 V rezistor přibližně 4,7–10 kΩ.
+RPi už DHT11 přímo nečte; teploty a vlhkosti přebírá ze sériového JSON Arduina.
+Vlhkost MPPT se kvůli kompatibilitě se stávající databází ukládá do nepoužívaného
+historického pole `solar1_voltage`; web ji převádí zpět na správně pojmenovanou
+hodnotu `mppt_humidity`. Napětí solárního panelu se v této instalaci neměří.
 
-| Měření | VCC | DATA | GND | Webové pole |
-|---|---|---|---|---|
-| Chata | 3V3 | BCM GPIO26 | GND | teplota a vlhkost v chatě |
-| MPPT | 3V3 | BCM GPIO21 | GND | teplota MPPT |
-
-Čidlo v chatě lze vypnout pomocí `DHT_ENABLED=0`, čidlo MPPT pomocí
-`DHT_MPPT_ENABLED=0`.
+Výkon baterie se počítá jako napětí INA219 `0x40` × proud ACS712 A3. Výkon
+zátěže je napětí INA219 `0x45` × proud ACS712 A2. Kladný proud baterie znamená
+nabíjení a záporný vybíjení.
 
 ## Firmware Arduino Nano
 

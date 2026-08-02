@@ -138,11 +138,12 @@ export function buildSolarAlerts({
 
   if (telemetry) {
     const missingSensors = [
-      [telemetry.object_temperature, "DHT11 v objektu"],
-      [telemetry.mppt_temperature, "DHT11 u MPPT"],
+      [telemetry.object_temperature, "DHT11 v objektu (Arduino D11)"],
+      [telemetry.mppt_temperature, "DHT11 u MPPT (Arduino D12)"],
       [telemetry.battery_temperature, "BMP280 baterie"],
       [telemetry.outside_temperature, "BMP280 venku"],
       [telemetry.battery_voltage, "INA219"],
+      [telemetry.load_voltage_v, "INA219 zátěže"],
       [telemetry.mq9_raw, "MQ-9"],
     ].filter(([value]) => finite(value as number | null | undefined) === null).map(([, label]) => label);
     if (missingSensors.length) {

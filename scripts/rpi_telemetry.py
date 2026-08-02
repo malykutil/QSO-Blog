@@ -10,8 +10,6 @@ import time
 import urllib.error
 import urllib.request
 
-import adafruit_dht
-import board
 import lgpio
 import serial
 import smbus
@@ -23,13 +21,6 @@ DEVICE_API_URL = BASE_URL + "/api/solar/device"
 TOKEN = os.environ.get("SOLAR_RPI_TOKEN", "")
 INTERVAL = max(10, int(os.environ.get("TELEMETRY_INTERVAL_SECONDS", "60")))
 RELAY_POLL_INTERVAL = max(2, int(os.environ.get("RELAY_POLL_INTERVAL_SECONDS", "5")))
-DHT_ENABLED = os.environ.get("DHT_ENABLED", "1") == "1"
-DHT_GPIO = int(os.environ.get("DHT_GPIO", "26"))
-DHT_MPPT_ENABLED = os.environ.get("DHT_MPPT_ENABLED", "1") == "1"
-DHT_MPPT_GPIO = int(os.environ.get("DHT_MPPT_GPIO", "21"))
-DHT_READ_RETRIES = max(1, int(os.environ.get("DHT_READ_RETRIES", "3")))
-DHT_MAX_TEMPERATURE_STEP_C = max(0.5, float(os.environ.get("DHT_MAX_TEMPERATURE_STEP_C", "3")))
-DHT_MAX_HUMIDITY_STEP_PERCENT = max(1.0, float(os.environ.get("DHT_MAX_HUMIDITY_STEP_PERCENT", "15")))
 NANO_PORT = os.environ.get("ARDUINO_SERIAL_PORT", "").strip()
 NANO_BAUD = int(os.environ.get("ARDUINO_SERIAL_BAUD", "115200"))
 NANO_TIMEOUT = max(3.0, float(os.environ.get("ARDUINO_READ_TIMEOUT_SECONDS", "6")))
@@ -130,43 +121,6 @@ class NanoTelemetry:
         raise RuntimeError("Arduino Nano neposlalo platny JSON v casovem limitu")
 
 
-class Dht11Reader:
-    def __init__(self, gpio, name):
-        self.sensor = adafruit_dht.DHT11(getattr(board, f"D{gpio}"))
-        self.name = name
-        self.last_valid_reading = None
-
-    def read(self):
-        last_error = None
-        for attempt in range(DHT_READ_RETRIES):
-            try:
-                temperature = self.sensor.temperature
-                humidity = self.sensor.humidity
-                if temperature is None or humidity is None:
-                    raise RuntimeError("cidlo nevratilo platna data")
-                temperature = float(temperature)
-                humidity = float(humidity)
-                if not -40.0 <= temperature <= 80.0 or not 0.0 <= humidity <= 100.0:
-                    raise ValueError("hodnota je mimo rozsah")
-                if self.last_valid_reading is not None:
-                    previous_temperature, previous_humidity = self.last_valid_reading
-                    if abs(temperature - previous_temperature) > DHT_MAX_TEMPERATURE_STEP_C:
-                        raise ValueError("skok teploty")
-                    if abs(humidity - previous_humidity) > DHT_MAX_HUMIDITY_STEP_PERCENT:
-                        raise ValueError("skok vlhkosti")
-                self.last_valid_reading = (temperature, humidity)
-                return temperature, humidity
-            except (RuntimeError, OSError, ValueError) as error:
-                last_error = error
-                if attempt + 1 < DHT_READ_RETRIES:
-                    time.sleep(2)
-        print(f"{self.name} neni dostupny: {last_error}", flush=True)
-        return self.last_valid_reading if self.last_valid_reading is not None else (None, None)
-
-    def close(self):
-        self.sensor.exit()
-
-
 class UpsHatReader:
     CONFIG_REGISTER = 0x00
     SHUNT_VOLTAGE_REGISTER = 0x01
@@ -224,8 +178,6 @@ class UpsHatReader:
         self.bus.close()
 
 
-dht_room = optional_device(lambda: Dht11Reader(DHT_GPIO, f"DHT11 chata GPIO{DHT_GPIO}"), "DHT11 chata") if DHT_ENABLED else None
-dht_mppt = optional_device(lambda: Dht11Reader(DHT_MPPT_GPIO, f"DHT11 MPPT GPIO{DHT_MPPT_GPIO}"), "DHT11 MPPT") if DHT_MPPT_ENABLED else None
 ups_hat = optional_device(lambda: UpsHatReader(UPS_HAT_I2C_BUS, UPS_HAT_I2C_ADDRESS), "Waveshare UPS HAT") if UPS_HAT_ENABLED else None
 nano = NanoTelemetry()
 gpio_handle = lgpio.gpiochip_open(0)
@@ -367,28 +319,39 @@ def read_rpi_cpu_temperature():
 
 
 def read_sensors(nano_payload):
-    object_temperature, object_humidity = dht_room.read() if dht_room else (None, None)
-    mppt_temperature, _mppt_humidity = dht_mppt.read() if dht_mppt else (None, None)
     acs3_current = payload_number(nano_payload, "acs3_current")
+    load_current = payload_number(nano_payload, "acs2_current")
+    load_voltage = payload_number(nano_payload, "load_voltage")
+    battery_voltage = payload_number(nano_payload, "battery_voltage")
+    if battery_voltage is None:
+        battery_voltage = payload_number(nano_payload, "ina219_bus_voltage")
+    load_power = load_voltage * load_current if load_voltage is not None and load_current is not None else None
     ups = ups_hat.read() if ups_hat else {}
     return {
         "arduino_uptime_ms": payload_number(nano_payload, "uptime_ms"),
         "rpi_cpu_temperature": read_rpi_cpu_temperature(),
-        "object_temperature": object_temperature,
-        "object_humidity": object_humidity,
-        "mppt_temperature": mppt_temperature,
+        "object_temperature": payload_number(nano_payload, "object_temperature"),
+        "object_humidity": payload_number(nano_payload, "object_humidity"),
+        "mppt_temperature": payload_number(nano_payload, "mppt_temperature"),
+        # Existujici sloupec je pouzit jako transport vlhkosti DHT11 na D12.
+        # Solarni napeti se v teto instalaci samostatne nemeri.
+        "solar1_voltage": payload_number(nano_payload, "mppt_humidity"),
         "battery_temperature": payload_number(nano_payload, "battery_temperature"),
         "outside_temperature": payload_number(nano_payload, "outside_temperature"),
         "outside_pressure": payload_number(nano_payload, "outside_pressure"),
         "battery_pressure": payload_number(nano_payload, "battery_pressure"),
-        "battery_voltage": payload_number(nano_payload, "ina219_bus_voltage"),
+        "battery_voltage": battery_voltage,
+        # Historicky se pole jmenuje solar2_voltage; od 2026-08-02 nese napeti zateze.
+        "solar2_voltage": load_voltage,
+        "load_power": load_power,
         # Existujici INA219 pole prenaseji z Waveshare UPS HAT proud a napeti.
         # Vykon se nezobrazuje ani neuklada; dashboard je zamerne proudovy.
         "ina219_current": ups.get("current"),
         "ina219_power": None,
         "ina219_shunt_voltage_mv": ups.get("voltage"),
         "solar1_current": payload_number(nano_payload, "acs1_current"),
-        "solar2_current": payload_number(nano_payload, "acs2_current"),
+        # ACS712 na A2 meri proud zateze; na API zustava puvodni nazev kvuli DB kompatibilite.
+        "solar2_current": load_current,
         "battery_current": acs3_current,
         "acs1_raw": payload_number(nano_payload, "acs1_raw"),
         "acs1_voltage": payload_number(nano_payload, "acs1_voltage"),
@@ -455,10 +418,6 @@ finally:
         except OSError:
             pass
     lgpio.gpiochip_close(gpio_handle)
-    if dht_room:
-        dht_room.close()
-    if dht_mppt:
-        dht_mppt.close()
     if ups_hat:
         ups_hat.close()
     nano.close()

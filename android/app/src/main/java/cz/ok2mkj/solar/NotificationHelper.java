@@ -72,10 +72,9 @@ final class NotificationHelper {
             value(telemetry, "battery_temperature", "°C", 1),
             value(telemetry, "mppt_temperature", "°C", 1),
             value(telemetry, "outside_temperature", "°C", 1));
-        String currents = String.format(Locale.US, "Solar 1 %s • Solar 2 %s • Celkem %s",
+        String currents = String.format(Locale.US, "Solární vstup %s • Zátěž %s",
             value(telemetry, "solar1_current", "A", 2),
-            value(telemetry, "solar2_current", "A", 2),
-            value(telemetry, "solar_total_current", "A", 2));
+            value(telemetry, "solar2_current", "A", 2));
         double batteryCurrent = number(telemetry, "battery_current");
         String batteryState = Double.isNaN(batteryCurrent) ? "neznámý stav" : batteryCurrent > 0.1 ? "nabíjení" : batteryCurrent < -0.1 ? "vybíjení" : "klid";
         String battery = "Baterie " + value(telemetry, "battery_current", "A", 2) + " • " + batteryState;
