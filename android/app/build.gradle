@@ -24,8 +24,8 @@ android {
         applicationId "cz.ok2mkj.solar"
         minSdk 23
         targetSdk 36
-        versionCode 4
-        versionName "2.2"
+        versionCode 5
+        versionName "2.3"
 
         buildConfigField "String", "SOLAR_BASE_URL", javaString(configValue("SOLAR_BASE_URL", "https://ok2mkj.vercel.app"))
         buildConfigField "String", "SOLAR_USERNAME", javaString(configValue("SOLAR_USERNAME"))
