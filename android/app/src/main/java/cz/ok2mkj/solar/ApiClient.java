@@ -9,6 +9,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 final class ApiClient {
     private ApiClient() {}
@@ -30,10 +32,26 @@ final class ApiClient {
         }
 
         int code = connection.getResponseCode();
-        String setCookie = connection.getHeaderField("Set-Cookie");
+        String setCookie = collectCookies(connection.getHeaderFields());
         String responseBody = read(code >= 400 ? connection.getErrorStream() : connection.getInputStream());
         connection.disconnect();
         return new Response(code, responseBody, setCookie);
+    }
+
+    private static String collectCookies(Map<String, List<String>> headers) {
+        StringBuilder cookies = new StringBuilder();
+        if (headers == null) return "";
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            if (entry.getKey() == null || !"set-cookie".equalsIgnoreCase(entry.getKey()) || entry.getValue() == null) continue;
+            for (String header : entry.getValue()) {
+                if (header == null || header.isEmpty()) continue;
+                String cookie = header.split(";", 2)[0].trim();
+                if (cookie.isEmpty()) continue;
+                if (cookies.length() > 0) cookies.append("; ");
+                cookies.append(cookie);
+            }
+        }
+        return cookies.toString();
     }
 
     static Response requestAuthenticated(String path, String method, JSONObject body) throws Exception {

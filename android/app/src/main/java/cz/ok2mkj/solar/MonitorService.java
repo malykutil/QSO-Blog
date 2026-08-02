@@ -87,6 +87,7 @@ public class MonitorService extends Service {
             silenceCurrentAlarm();
             updateMonitorNotification("Čekám na potvrzení resetu MQ-9 z Raspberry Pi", latestPayload, latestTelemetry);
         } catch (Exception exception) {
+            updateMonitorNotification("RESET POPLACHU SE NEZDAŘIL", latestPayload, latestTelemetry);
             NotificationHelper.postCriticalAlarm(
                 this,
                 "Reset poplachu se nezdařil",
