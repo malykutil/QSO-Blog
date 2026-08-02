@@ -11,12 +11,15 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.window.OnBackInvokedDispatcher;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
@@ -71,40 +74,46 @@ public class MainActivity extends Activity {
 
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(16), 0, dp(8), 0);
+        toolbar.setPadding(dp(10), 0, dp(6), 0);
         toolbar.setBackgroundColor(Color.rgb(7, 17, 13));
 
-        Button navigation = toolbarButton("⋮");
+        TextView navigation = navigationButton();
         navigation.setContentDescription("Otevřít navigaci aplikace");
         navigation.setOnClickListener(this::showNavigationMenu);
-        toolbar.addView(navigation, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout.LayoutParams navigationParams = new LinearLayout.LayoutParams(dp(40), dp(40));
+        navigationParams.setMarginEnd(dp(10));
+        toolbar.addView(navigation, navigationParams);
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
         title.setText("OK2KZB");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
+        title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
         titleBlock.addView(title);
         connectionStatus = new TextView(this);
         connectionStatus.setText("PŘIPOJUJI DASHBOARD");
         connectionStatus.setTextColor(Color.rgb(134, 239, 172));
-        connectionStatus.setTextSize(9);
-        connectionStatus.setLetterSpacing(0.12f);
+        connectionStatus.setTextSize(8);
+        connectionStatus.setLetterSpacing(0.08f);
+        connectionStatus.setSingleLine(true);
+        connectionStatus.setEllipsize(TextUtils.TruncateAt.END);
         titleBlock.addView(connectionStatus);
-        toolbar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(56), 1));
+        toolbar.addView(titleBlock, new LinearLayout.LayoutParams(0, -1, 1));
 
         Button refresh = toolbarButton("↻");
         refresh.setContentDescription("Aktualizovat dashboard");
         refresh.setOnClickListener(view -> webView.reload());
-        toolbar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        toolbar.addView(refresh, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         Button settings = toolbarButton("⚙");
         settings.setContentDescription("Nastavení kritických oznámení");
         settings.setOnClickListener(view -> showSafetySettings());
-        toolbar.addView(settings, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(56)));
+        toolbar.addView(settings, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(58)));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(true);
@@ -145,7 +154,25 @@ public class MainActivity extends Activity {
         });
         root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
+        applySystemBarInsets(root);
         showLoadingPage();
+    }
+
+    private TextView navigationButton() {
+        TextView button = new TextView(this);
+        button.setText("⋮");
+        button.setTextSize(25);
+        button.setTextColor(Color.rgb(187, 247, 208));
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(0, 0, 0, dp(3));
+        button.setClickable(true);
+        button.setFocusable(true);
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.OVAL);
+        background.setColor(Color.rgb(15, 40, 29));
+        background.setStroke(dp(1), Color.rgb(34, 197, 94));
+        button.setBackground(background);
+        return button;
     }
 
     private Button toolbarButton(String label) {
@@ -155,7 +182,30 @@ public class MainActivity extends Activity {
         button.setTextColor(Color.WHITE);
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(0, 0, 0, 0);
+        button.setGravity(Gravity.CENTER);
         return button;
+    }
+
+    private void applySystemBarInsets(View root) {
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= 30) {
+                top = insets.getInsets(WindowInsets.Type.statusBars()).top;
+                bottom = insets.getInsets(WindowInsets.Type.navigationBars()).bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+        root.requestApplyInsets();
     }
 
     private void showNavigationMenu(View anchor) {
