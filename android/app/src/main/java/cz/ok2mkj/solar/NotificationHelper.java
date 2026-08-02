@@ -23,6 +23,7 @@ final class NotificationHelper {
     static final String CHANNEL_CRITICAL = "solar_critical_v2";
     static final int MONITOR_NOTIFICATION_ID = 100;
     static final int SUMMARY_NOTIFICATION_ID = 200;
+    static final int RESET_NOTIFICATION_ID = 201;
     static final int CRITICAL_NOTIFICATION_ID = 911;
 
     private NotificationHelper() {}
@@ -41,7 +42,7 @@ final class NotificationHelper {
         manager.createNotificationChannel(summary);
 
         NotificationChannel critical = new NotificationChannel(CHANNEL_CRITICAL, "KRITICKÉ POPLACHY", NotificationManager.IMPORTANCE_HIGH);
-        critical.setDescription("Požár, plyn, vysoká teplota baterie, nízké napětí nebo výpadek telemetrie");
+        critical.setDescription("Požár, plyn, vysoká teplota baterie nebo nízké napětí");
         critical.enableVibration(true);
         critical.setVibrationPattern(new long[]{0, 700, 250, 700, 250, 1400});
         critical.enableLights(true);
@@ -181,6 +182,28 @@ final class NotificationHelper {
             .addAction(android.R.drawable.ic_lock_silent_mode, "ZTIŠIT SIRÉNU", silence)
             .build();
         context.getSystemService(NotificationManager.class).notify(CRITICAL_NOTIFICATION_ID, notification);
+    }
+
+    static void postResetSuccess(Context context) {
+        Intent open = new Intent(context, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingOpen = PendingIntent.getActivity(
+            context,
+            6,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = builder(context, CHANNEL_SUMMARY)
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setColor(Color.rgb(34, 197, 94))
+            .setContentTitle("Poplach vypnut")
+            .setContentText("Raspberry Pi potvrdilo bezpečný stav. Relé jsou odblokovaná pro ruční ovládání.")
+            .setStyle(new Notification.BigTextStyle().bigText(
+                "Raspberry Pi potvrdilo bezpečnou hodnotu MQ-9. Krizový stav byl ukončen a relé jsou znovu odblokovaná. Všechna zůstávají vypnutá, dokud je ručně nezapneš."))
+            .setContentIntent(pendingOpen)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .build();
+        context.getSystemService(NotificationManager.class).notify(RESET_NOTIFICATION_ID, notification);
     }
 
     static void cancelCriticalAlarm(Context context) {

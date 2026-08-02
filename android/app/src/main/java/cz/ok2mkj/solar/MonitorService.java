@@ -85,8 +85,10 @@ public class MonitorService extends Service {
             }
             // Server reset je pouze žádost; RPi ji musí potvrdit čerstvou hodnotou MQ-9.
             silenceCurrentAlarm();
+            preferences.edit().putBoolean("alarm_reset_requested", true).apply();
             updateMonitorNotification("Čekám na potvrzení resetu MQ-9 z Raspberry Pi", latestPayload, latestTelemetry);
         } catch (Exception exception) {
+            preferences.edit().putBoolean("alarm_reset_requested", false).apply();
             updateMonitorNotification("RESET POPLACHU SE NEZDAŘIL", latestPayload, latestTelemetry);
             NotificationHelper.postCriticalAlarm(
                 this,
@@ -106,6 +108,12 @@ public class MonitorService extends Service {
                 lastSuccessfulPoll = System.currentTimeMillis();
                 preferences.edit().putLong("last_successful_poll", lastSuccessfulPoll).apply();
                 evaluateState(payload, latestTelemetry);
+                if (!payload.optBoolean("alarmActive", false)
+                    && !payload.optBoolean("alarmResetPending", false)
+                    && preferences.getBoolean("alarm_reset_requested", false)) {
+                    preferences.edit().putBoolean("alarm_reset_requested", false).apply();
+                    NotificationHelper.postResetSuccess(this);
+                }
                 maybePostHourlySummary(payload);
                 updateMonitorNotification("Online • aktualizováno právě teď", payload, latestTelemetry);
             } catch (Exception exception) {
@@ -114,7 +122,7 @@ public class MonitorService extends Service {
                     age > OFFLINE_LIMIT_MS ? "VAROVÁNÍ • přes 5 minut bez nových dat" : "Čekám na spojení se serverem",
                     latestPayload,
                     latestTelemetry);
-                if (age > OFFLINE_LIMIT_MS) activateAlarm("offline", "Dohled je bez spojení", "Telefon déle než 5 minut nezískal telemetrii. Zkontroluj internet, Raspberry Pi a napájení.");
+                if (age > OFFLINE_LIMIT_MS) clearLegacyOfflineAlarm();
             } finally {
                 handler.postDelayed(this::poll, POLL_INTERVAL_MS);
             }
@@ -127,7 +135,7 @@ public class MonitorService extends Service {
             return;
         }
         if (telemetry == null || isTelemetryOffline(telemetry.optString("recorded_at", ""))) {
-            activateAlarm("offline", "Řídicí jednotka je offline", "Telemetrie je starší než 5 minut. Zobrazené hodnoty nemusí odpovídat skutečnosti.");
+            clearLegacyOfflineAlarm();
             return;
         }
         double voltage = finite(telemetry, "battery_voltage");
@@ -161,6 +169,13 @@ public class MonitorService extends Service {
             stopSiren();
             NotificationHelper.cancelCriticalAlarm(this);
         }
+    }
+
+    private void clearLegacyOfflineAlarm() {
+        if (!"offline".equals(preferences.getString("active_alarm_key", ""))) return;
+        preferences.edit().remove("active_alarm_key").putBoolean("alarm_silenced", false).apply();
+        stopSiren();
+        NotificationHelper.cancelCriticalAlarm(this);
     }
 
     private void silenceCurrentAlarm() {

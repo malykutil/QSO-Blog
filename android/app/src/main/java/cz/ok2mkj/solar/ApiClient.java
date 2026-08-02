@@ -65,8 +65,7 @@ final class ApiClient {
         if (login.code < 200 || login.code >= 300 || login.cookie == null || login.cookie.isEmpty()) {
             throw new IllegalStateException("Přihlášení aplikace k serveru selhalo (HTTP " + login.code + ").");
         }
-        String cookie = login.cookie.split(";", 2)[0];
-        return request(path, method, body, cookie);
+        return request(path, method, body, login.cookie);
     }
 
     private static String read(InputStream input) throws Exception {

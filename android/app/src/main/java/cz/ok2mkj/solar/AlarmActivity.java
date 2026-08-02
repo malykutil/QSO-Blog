@@ -88,7 +88,7 @@ public class AlarmActivity extends Activity {
             .setPositiveButton("Ano, resetovat", (dialog, which) -> {
                 Intent resetIntent = new Intent(this, MonitorService.class).setAction(MonitorService.ACTION_RESET_ALARM);
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(resetIntent); else startService(resetIntent);
-                android.widget.Toast.makeText(this, "Odesílám potvrzení na Raspberry Pi…", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this, "Odesílám potvrzení. Po odblokování relé přijde oznámení.", android.widget.Toast.LENGTH_LONG).show();
                 finish();
             })
             .show();
