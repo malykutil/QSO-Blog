@@ -1,6 +1,8 @@
 package cz.ok2mkj.solar;
 
 import android.app.NotificationManager;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -16,6 +18,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 
 import org.json.JSONObject;
@@ -265,6 +268,23 @@ public class MonitorService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        Intent restartIntent = new Intent(this, BootReceiver.class)
+            .setAction(BootReceiver.ACTION_RESTART_MONITOR);
+        PendingIntent restart = PendingIntent.getBroadcast(
+            this,
+            700,
+            restartIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            SystemClock.elapsedRealtime() + 5_000L,
+            restart);
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override
