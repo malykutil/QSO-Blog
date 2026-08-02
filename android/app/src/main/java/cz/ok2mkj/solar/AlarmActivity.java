@@ -50,12 +50,14 @@ public class AlarmActivity extends Activity {
         detail.setPadding(0, dp(18), 0, dp(30));
         root.addView(detail);
 
-        Button silence = button("ZTIŠIT SIRÉNU", Color.WHITE, Color.rgb(120, 0, 0));
-        silence.setOnClickListener(view -> {
-            startService(new Intent(this, MonitorService.class).setAction(MonitorService.ACTION_SILENCE_ALARM));
+        Button reset = button("POTVRDIT A VYPNOUT POPLACH", Color.WHITE, Color.rgb(120, 0, 0));
+        reset.setOnClickListener(view -> {
+            Intent resetIntent = new Intent(this, MonitorService.class).setAction(MonitorService.ACTION_RESET_ALARM);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(resetIntent); else startService(resetIntent);
+            android.widget.Toast.makeText(this, "Odesílám požadavek na Raspberry Pi…", android.widget.Toast.LENGTH_LONG).show();
             finish();
         });
-        root.addView(silence, new LinearLayout.LayoutParams(-1, dp(58)));
+        root.addView(reset, new LinearLayout.LayoutParams(-1, dp(58)));
 
         Button dashboard = button("OTEVŘÍT DASHBOARD", Color.rgb(75, 0, 0), Color.WHITE);
         dashboard.setOnClickListener(view -> {
@@ -66,7 +68,7 @@ public class AlarmActivity extends Activity {
         dashboardParams.topMargin = dp(12);
         root.addView(dashboard, dashboardParams);
 
-        TextView warning = text("Ztišení sirény neruší poplach na Raspberry Pi ani znovu nezapíná relé.", 13, Color.rgb(255, 190, 190));
+        TextView warning = text("Reset je možný pouze při bezpečné hodnotě MQ-9. Relé se po resetu sama nezapnou.", 13, Color.rgb(255, 190, 190));
         warning.setGravity(Gravity.CENTER);
         warning.setPadding(0, dp(24), 0, 0);
         root.addView(warning);

@@ -162,6 +162,10 @@ final class NotificationHelper {
 
         Intent silenceIntent = new Intent(context, MonitorService.class).setAction(MonitorService.ACTION_SILENCE_ALARM);
         PendingIntent silence = PendingIntent.getService(context, 4, silenceIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Intent resetIntent = new Intent(context, MonitorService.class).setAction(MonitorService.ACTION_RESET_ALARM);
+        PendingIntent reset = Build.VERSION.SDK_INT >= 26
+            ? PendingIntent.getForegroundService(context, 5, resetIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)
+            : PendingIntent.getService(context, 5, resetIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification.BigTextStyle style = new Notification.BigTextStyle().bigText(detail).setBigContentTitle(title);
         Notification notification = builder(context, CHANNEL_CRITICAL)
@@ -179,6 +183,7 @@ final class NotificationHelper {
             .setContentIntent(fullScreen)
             .setFullScreenIntent(fullScreen, true)
             .addAction(android.R.drawable.ic_lock_silent_mode, "ZTIŠIT SIRÉNU", silence)
+            .addAction(android.R.drawable.ic_menu_save, "VYPNOUT POPLACH", reset)
             .build();
         context.getSystemService(NotificationManager.class).notify(CRITICAL_NOTIFICATION_ID, notification);
     }

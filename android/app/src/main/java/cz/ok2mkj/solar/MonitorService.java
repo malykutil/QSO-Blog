@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 
 public class MonitorService extends Service {
     static final String ACTION_SILENCE_ALARM = "cz.ok2mkj.solar.SILENCE_ALARM";
+    static final String ACTION_RESET_ALARM = "cz.ok2mkj.solar.RESET_ALARM";
     private static final long POLL_INTERVAL_MS = 15_000L;
     private static final long HOUR_MS = 3_600_000L;
     private static final long OFFLINE_LIMIT_MS = 5 * 60_000L;
@@ -69,7 +70,28 @@ public class MonitorService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_SILENCE_ALARM.equals(intent.getAction())) silenceCurrentAlarm();
+        if (intent != null && ACTION_RESET_ALARM.equals(intent.getAction())) {
+            executor.execute(this::requestAlarmReset);
+        }
         return START_STICKY;
+    }
+
+    private void requestAlarmReset() {
+        try {
+            ApiClient.Response response = ApiClient.requestAuthenticated("/api/solar/alarm", "POST", null);
+            if (response.code < 200 || response.code >= 300) {
+                JSONObject result = response.body == null || response.body.isEmpty() ? new JSONObject() : new JSONObject(response.body);
+                throw new IllegalStateException(result.optString("error", "Server reset poplachu odmítl (HTTP " + response.code + ")."));
+            }
+            // Server reset je pouze žádost; RPi ji musí potvrdit čerstvou hodnotou MQ-9.
+            silenceCurrentAlarm();
+            updateMonitorNotification("Čekám na potvrzení resetu MQ-9 z Raspberry Pi", latestPayload, latestTelemetry);
+        } catch (Exception exception) {
+            NotificationHelper.postCriticalAlarm(
+                this,
+                "Reset poplachu se nezdařil",
+                exception.getMessage() == null ? "Server reset poplachu odmítl." : exception.getMessage());
+        }
     }
 
     private void poll() {

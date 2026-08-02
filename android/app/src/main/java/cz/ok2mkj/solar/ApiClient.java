@@ -36,6 +36,21 @@ final class ApiClient {
         return new Response(code, responseBody, setCookie);
     }
 
+    static Response requestAuthenticated(String path, String method, JSONObject body) throws Exception {
+        if (BuildConfig.SOLAR_USERNAME.isEmpty() || BuildConfig.SOLAR_PASSWORD.isEmpty()) {
+            throw new IllegalStateException("Aplikace nemá nastavené přihlašovací údaje.");
+        }
+        JSONObject credentials = new JSONObject()
+            .put("email", BuildConfig.SOLAR_USERNAME)
+            .put("password", BuildConfig.SOLAR_PASSWORD);
+        Response login = request("/api/auth/login", "POST", credentials, null);
+        if (login.code < 200 || login.code >= 300 || login.cookie == null || login.cookie.isEmpty()) {
+            throw new IllegalStateException("Přihlášení aplikace k serveru selhalo (HTTP " + login.code + ").");
+        }
+        String cookie = login.cookie.split(";", 2)[0];
+        return request(path, method, body, cookie);
+    }
+
     private static String read(InputStream input) throws Exception {
         if (input == null) return "";
         StringBuilder result = new StringBuilder();
