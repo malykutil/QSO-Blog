@@ -72,7 +72,7 @@ export function OverviewMetrics({
       label="Solární proud"
       value={numberValue(telemetry?.solar_total_current, 2)}
       unit={finite(telemetry?.solar_total_current) === null ? undefined : "A"}
-      detail="Solární vstup · ACS712 na A1"
+      detail="Solární vstup · ACS712 na A3"
       icon="solar"
       tone="solar"
       stale={stale}
@@ -87,22 +87,24 @@ export function OverviewMetrics({
       stale={stale}
     />
     <MetricCard
-      label="Proud baterie"
-      value={signedValue(telemetry?.battery_current, 2)}
+      label="Proud zátěže"
+      value={signedValue(telemetry?.battery_flow_current_a, 2)}
       unit="A"
-      detail={batteryStateLabels[batteryState]}
+      detail="Zátěžová větev · převrácené znaménko A1"
       icon="current"
-      tone={batteryState === "charging" ? "positive" : batteryState === "discharging" ? "warning" : "neutral"}
+      tone="info"
       stale={stale}
     />
-    <MetricCard label="Výkon baterie" value={signedValue(telemetry?.battery_power_w, 1)} unit={finite(telemetry?.battery_power_w) === null ? undefined : "W"} detail="Kladný = do baterie, záporný = z baterie" icon="battery" tone={batteryState === "charging" ? "positive" : batteryState === "discharging" ? "warning" : "neutral"} stale={stale} />
+    <MetricCard label="Výkon zátěže" value={signedValue(telemetry?.battery_power_w, 1)} unit={finite(telemetry?.battery_power_w) === null ? undefined : "W"} detail="Napětí × proud zátěžové větve" icon="load" tone="warning" stale={stale} />
     <MetricCard label="Napětí zátěže" value={numberValue(telemetry?.load_voltage_v, 2)} unit={finite(telemetry?.load_voltage_v) === null ? undefined : "V"} detail="INA219 · I²C 0x45" icon="load" tone="info" stale={stale} />
-    <MetricCard label="Proud zátěže" value={signedValue(telemetry?.load_current_a, 2)} unit={finite(telemetry?.load_current_a) === null ? undefined : "A"} detail="ACS712 na A2 · dříve Solar 2" icon="current" tone="info" stale={stale} />
-    <MetricCard label="Výkon zátěže" value={signedValue(telemetry?.load_power_w, 1)} unit={finite(telemetry?.load_power_w) === null ? undefined : "W"} detail="Napětí 0x45 × proud A2" icon="load" tone="warning" stale={stale} />
+    <MetricCard label="Proud baterie" value={signedValue(telemetry?.load_current_a, 2)} unit={finite(telemetry?.load_current_a) === null ? undefined : "A"} detail={batteryStateLabels[batteryState]} icon="current" tone={batteryState === "charging" ? "positive" : batteryState === "discharging" ? "warning" : "neutral"} stale={stale} />
+    <MetricCard label="Výkon baterie" value={signedValue(telemetry?.load_power_w, 1)} unit={finite(telemetry?.load_power_w) === null ? undefined : "W"} detail="Kladný = nabíjení, záporný = vybíjení" icon="battery" tone={batteryState === "charging" ? "positive" : batteryState === "discharging" ? "warning" : "neutral"} stale={stale} />
     <MetricCard label="UPS Raspberry Pi" value={numberValue(telemetry?.ups_charge_percent, 0)} unit={finite(telemetry?.ups_charge_percent) === null ? undefined : "%"} detail={`${upsStateLabels[telemetry?.ups_state ?? "unknown"]} · ${numberValue(telemetry?.ups_voltage_v, 2)} V`} icon="battery" tone={telemetry?.ups_state === "charging" ? "positive" : telemetry?.ups_state === "discharging" ? "warning" : "neutral"} stale={stale} />
     <MetricCard label="Řídicí jednotka" value={systemLabel} detail={`CPU ${numberValue(telemetry?.rpi_cpu_temperature)} °C · ${formatAge(telemetry?.recorded_at, now)}`} icon="system" tone={freshness === "online" ? "positive" : freshness === "delayed" ? "warning" : "negative"} />
     <MetricCard label="Poslední data" value={formatTime(telemetry?.recorded_at)} detail={formatAge(telemetry?.recorded_at, now)} icon="clock" tone={freshness === "online" ? "info" : "negative"} />
-  </section>;
+     <MetricCard label="Teplota uvnitř" value={numberValue(telemetry?.object_temperature, 1)} unit={finite(telemetry?.object_temperature) === null ? undefined : "°C"} detail="DHT11 · uvnitř objektu" icon="temperature" tone="info" stale={stale} />
+     <MetricCard label="Teplota venku" value={numberValue(telemetry?.outside_temperature, 1)} unit={finite(telemetry?.outside_temperature) === null ? undefined : "°C"} detail="Venkovní teplotní senzor" icon="temperature" tone="positive" stale={stale} />
+   </section>;
 }
 
 function FlowArrow({ active, reverse = false }: { active: boolean; reverse?: boolean }) {
@@ -110,18 +112,18 @@ function FlowArrow({ active, reverse = false }: { active: boolean; reverse?: boo
 }
 
 export function EnergyFlow({ telemetry }: { telemetry: SolarEnergyPoint | null }) {
-  const solar1Current = finite(telemetry?.solar1_current);
+  const solar1Current = finite(telemetry?.solar_total_current);
   const loadCurrent = finite(telemetry?.load_current_a);
-  const batteryCurrent = finite(telemetry?.battery_current);
+  const batteryCurrent = finite(telemetry?.battery_flow_current_a);
   return <SolarPanel title="Tok proudů a výkonů" eyebrow="Okamžité hodnoty" className="solar-energy-flow-panel">
     <div className="solar-energy-flow mt-5">
-      <div className="solar-energy-node solar-energy-node--solar"><SolarIcon name="solar" className="h-7 w-7" /><span>Solární vstup</span><strong>{numberValue(solar1Current, 2)} {solar1Current === null ? "" : "A"}</strong><small>ACS712 · A1</small></div>
+      <div className="solar-energy-node solar-energy-node--solar"><SolarIcon name="solar" className="h-7 w-7" /><span>Solární vstup</span><strong>{numberValue(solar1Current, 2)} {solar1Current === null ? "" : "A"}</strong><small>ACS712 · A3</small></div>
       <FlowArrow active={solar1Current !== null && solar1Current > 0.1} />
-      <div className="solar-energy-node solar-energy-node--battery"><SolarIcon name="battery" className="h-7 w-7" /><span>Bateriová větev</span><strong>{signedValue(telemetry?.battery_power_w, 1)} {finite(telemetry?.battery_power_w) === null ? "" : "W"}</strong><small>{signedValue(batteryCurrent, 2)} A · {batteryStateLabels[telemetry?.battery_state ?? "unknown"]}</small></div>
+      <div className="solar-energy-node solar-energy-node--battery"><SolarIcon name="battery" className="h-7 w-7" /><span>Bateriová větev</span><strong>{signedValue(telemetry?.load_power_w, 1)} {finite(telemetry?.load_power_w) === null ? "" : "W"}</strong><small>{signedValue(loadCurrent, 2)} A · {batteryStateLabels[telemetry?.battery_state ?? "unknown"]}</small></div>
       <FlowArrow active={loadCurrent !== null && Math.abs(loadCurrent) > 0.1} />
-      <div className="solar-energy-node solar-energy-node--solar"><SolarIcon name="load" className="h-7 w-7" /><span>Zátěž</span><strong>{signedValue(telemetry?.load_power_w, 1)} {finite(telemetry?.load_power_w) === null ? "" : "W"}</strong><small>{signedValue(loadCurrent, 2)} A · ACS712 A2</small></div>
+      <div className="solar-energy-node solar-energy-node--solar"><SolarIcon name="load" className="h-7 w-7" /><span>Zátěž</span><strong>{signedValue(telemetry?.battery_power_w, 1)} {finite(telemetry?.battery_power_w) === null ? "" : "W"}</strong><small>{signedValue(batteryCurrent, 2)} A · zátěžová větev</small></div>
     </div>
-    <p className="mt-4 text-xs leading-5 text-[var(--solar-muted)]">Napětí baterie měří INA219 na 0x40, napětí zátěže INA219 na 0x45. Výkon baterie je napětí baterie × proud A3, výkon zátěže je napětí zátěže × proud A2.</p>
+    <p className="mt-4 text-xs leading-5 text-[var(--solar-muted)]">Podle požadovaného prohození hodnot se bateriová větev zobrazuje z A2, zátěžová větev z převráceného A1 a solární proud z A3.</p>
   </SolarPanel>;
 }
 
@@ -130,10 +132,10 @@ export function BatteryStatus({ telemetry }: { telemetry: SolarEnergyPoint | nul
   return <SolarPanel title={batteryStateLabels[state]} eyebrow="Baterie" className="h-full">
     <div className="mt-5 grid grid-cols-2 gap-3">
       <SensorValue label="Napětí" value={numberValue(telemetry?.battery_voltage, 2)} unit="V" />
-      <SensorValue label="Proud" value={signedValue(telemetry?.battery_current, 2)} unit="A" />
-      <SensorValue label="Výkon" value={signedValue(telemetry?.battery_power_w, 1)} unit="W" />
-      <SensorValue label="Solární vstup" value={numberValue(telemetry?.solar1_current, 2)} unit="A" />
-      <SensorValue label="Proud zátěže" value={signedValue(telemetry?.load_current_a, 2)} unit="A" />
+      <SensorValue label="Proud zátěže" value={signedValue(telemetry?.battery_flow_current_a, 2)} unit="A" />
+      <SensorValue label="Výkon baterie" value={signedValue(telemetry?.load_power_w, 1)} unit="W" />
+      <SensorValue label="Solární vstup" value={numberValue(telemetry?.solar_total_current, 2)} unit="A" />
+      <SensorValue label="Proud baterie" value={signedValue(telemetry?.load_current_a, 2)} unit="A" />
       <SensorValue label="Teplota" value={numberValue(telemetry?.battery_temperature, 1)} unit="°C" />
     </div>
     <div className="solar-battery-unknown mt-4"><span>Stav nabití</span><strong>N/A</strong><small>Vyžaduje data z BMS nebo kalibrovanou napěťovou křivku.</small></div>
@@ -166,15 +168,15 @@ function SensorValue({ label, value, unit }: { label: string; value: string; uni
 export function DailySummary({ summary }: { summary: SolarEnergySummary }) {
   const items = [
     ["Solární vstup dnes", ahValue(summary.solar1_ah), "Ah", "Integrál proudu ACS712 na A1"],
-    ["Zátěž dnes", ahValue(summary.load_ah), "Ah", "Integrál kladného proudu ACS712 na A2"],
+    ["Bateriová větev dnes", ahValue(summary.load_ah), "Ah", "Integrál proudu zobrazované bateriové větve"],
     ["Nabito do baterie", ahValue(summary.battery_charged_ah), "Ah", "Integrál kladného proudu baterie"],
     ["Odebráno z baterie", ahValue(summary.battery_discharged_ah), "Ah", "Integrál záporného proudu baterie"],
     ["Bilance baterie", signedValue(summary.battery_net_ah, 2), "Ah", "Nabito minus odebráno"],
     ["Energie do baterie", ahValue(summary.battery_charged_wh), "Wh", "Integrál kladného výkonu baterie"],
     ["Energie z baterie", ahValue(summary.battery_discharged_wh), "Wh", "Integrál záporného výkonu baterie"],
-    ["Energie zátěže", ahValue(summary.load_energy_wh), "Wh", "Integrál výkonu zátěže"],
+    ["Spotřeba dnes", ahValue(summary.consumption_energy_wh), "Wh", "Podle znaménka proudu baterie"],
     ["Maximum solárního vstupu", numberValue(summary.solar1_max_current_a, 2), "A", "Nejvyšší dnešní proud A1"],
-    ["Maximum zátěže", numberValue(summary.load_max_current_a, 2), "A", "Nejvyšší dnešní proud A2"],
+    ["Maximum bateriové větve", numberValue(summary.load_max_current_a, 2), "A", "Nejvyšší dnešní zobrazovaný proud baterie"],
   ];
   return <SolarPanel id="souhrn" title="Dnešní souhrn" eyebrow="Europe/Prague">
     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -4,7 +4,7 @@ export const solarTelemetryFields =
 export const solarExtendedTelemetryFields =
   "arduino_uptime_ms,battery_pressure,ina219_current,ina219_power,ina219_shunt_voltage_mv,acs1_raw,acs1_voltage,acs2_raw,acs2_voltage,acs3_raw,acs3_voltage,mq9_alarm,mq9_alarm_trigger_raw";
 
-export const solarRelayNames = ["solar1", "solar2", "battery", "bufik", "fan12v", "fan24v"] as const;
+export const solarRelayNames = ["solar1", "solar2", "battery", "bufik", "fan12v", "fan24v", "aux", "aux2"] as const;
 export type SolarRelayName = (typeof solarRelayNames)[number];
 
 export type SolarTelemetry = {
@@ -51,6 +51,7 @@ export type TelemetryFreshness = "online" | "delayed" | "offline";
 export type SolarEnergyPoint = SolarTelemetry & {
   mppt_humidity: number | null;
   solar_total_current: number | null;
+  battery_flow_current_a: number | null;
   load_voltage_v: number | null;
   load_current_a: number | null;
   battery_power_w: number | null;
@@ -70,6 +71,7 @@ export type SolarEnergyPoint = SolarTelemetry & {
   battery_charged_wh: number;
   battery_discharged_wh: number;
   load_energy_wh: number;
+  consumption_energy_wh: number;
 };
 
 export type SolarEnergySummary = {
@@ -87,6 +89,7 @@ export type SolarEnergySummary = {
   battery_charged_wh: number;
   battery_discharged_wh: number;
   load_energy_wh: number;
+  consumption_energy_wh: number;
   battery_max_charge_current_a: number | null;
   battery_max_discharge_current_a: number | null;
   battery_voltage_min_v: number | null;
@@ -112,4 +115,6 @@ export const defaultSolarRelayState: SolarRelayState = {
   bufik: false,
   fan12v: false,
   fan24v: false,
+  aux: false,
+  aux2: false,
 };
