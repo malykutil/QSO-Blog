@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/app/components/app-shell";
+import { BlogEditButton } from "@/app/components/blog-edit-button";
 import { BlogImage } from "@/app/components/blog-image";
 import { BlogViewCounter } from "@/app/components/blog-view-counter";
 import { findFallbackBlogPost, formatBlogDate, normalizeBlogPost } from "@/src/lib/blog-data";
@@ -80,6 +81,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
               <span aria-hidden="true">·</span>
               <BlogViewCounter slug={post.slug} initialCount={post.viewCount} />
             </p>
+            <BlogEditButton postId={post.id} createdBy={post.createdBy} />
           </div>
         </section>
 

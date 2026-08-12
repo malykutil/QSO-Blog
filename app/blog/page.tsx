@@ -25,12 +25,14 @@ async function getInitialPosts() {
   return data.map((row) => normalizeBlogPost(row));
 }
 
-export default async function BlogPage() {
+export default async function BlogPage({ searchParams }: { searchParams: Promise<{ edit?: string | string[] }> }) {
+  const { edit } = await searchParams;
+  const initialEditPostId = typeof edit === "string" ? edit : null;
   const initialPosts = await getInitialPosts();
 
   return (
     <AppShell>
-      <BlogManager initialPosts={initialPosts} />
+      <BlogManager initialPosts={initialPosts} initialEditPostId={initialEditPostId} />
     </AppShell>
   );
 }

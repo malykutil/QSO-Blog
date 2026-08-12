@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { BlogImage } from "@/app/components/blog-image";
 import { uploadBlogImageFile, validateBlogImageFile } from "@/src/lib/blog-media";
@@ -18,6 +18,7 @@ import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/src/lib/supaba
 
 type BlogManagerProps = {
   initialPosts: BlogPost[];
+  initialEditPostId?: string | null;
 };
 
 type BlogFormState = {
@@ -100,7 +101,7 @@ function postToForm(post: BlogPost): BlogFormState {
   };
 }
 
-export function BlogManager({ initialPosts }: BlogManagerProps) {
+export function BlogManager({ initialPosts, initialEditPostId = null }: BlogManagerProps) {
   const [posts, setPosts] = useState<BlogPost[]>(initialPosts.length ? initialPosts : fallbackBlogPosts);
   const [myPosts, setMyPosts] = useState<BlogPost[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -113,6 +114,7 @@ export function BlogManager({ initialPosts }: BlogManagerProps) {
   const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
   const [galleryImageFiles, setGalleryImageFiles] = useState<File[]>([]);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const appliedInitialEditRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
   useEffect(() => {
@@ -156,9 +158,23 @@ export function BlogManager({ initialPosts }: BlogManagerProps) {
         return;
       }
 
+      const ownerPosts = (data ?? []).map((row) => normalizeBlogPost(row));
+      const requestedPost = initialEditPostId && appliedInitialEditRef.current !== initialEditPostId
+        ? ownerPosts.find((post) => post.id === initialEditPostId)
+        : null;
+
       startTransition(() => {
-        setMyPosts((data ?? []).map((row) => normalizeBlogPost(row)));
+        setMyPosts(ownerPosts);
+        if (requestedPost) {
+          appliedInitialEditRef.current = initialEditPostId;
+          setEditingPostId(requestedPost.id ?? null);
+          setForm(postToForm(requestedPost));
+          setCoverImageFile(null);
+          setGalleryImageFiles([]);
+          setStatus(`Upravuješ článek „${requestedPost.title}“.`);
+        }
       });
+      if (requestedPost) window.requestAnimationFrame(() => document.getElementById("blog-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     };
 
     const syncSession = async () => {
@@ -209,7 +225,7 @@ export function BlogManager({ initialPosts }: BlogManagerProps) {
       subscription.unsubscribe();
       window.clearInterval(intervalId);
     };
-  }, [isLoggedIn]);
+  }, [initialEditPostId, isLoggedIn]);
 
   const handleChange = <K extends keyof BlogFormState>(field: K, value: BlogFormState[K]) => {
     setForm((current) => ({
@@ -381,6 +397,7 @@ export function BlogManager({ initialPosts }: BlogManagerProps) {
     setCoverImageFile(null);
     setGalleryImageFiles([]);
     setStatus(`Upravuješ článek „${post.title}“.`);
+    window.requestAnimationFrame(() => document.getElementById("blog-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const handleDeletePost = async (post: BlogPost) => {
@@ -518,7 +535,7 @@ export function BlogManager({ initialPosts }: BlogManagerProps) {
         </div>
 
         <aside className="space-y-6">
-          <div className="glass-panel rounded-[2.2rem] p-6">
+          <div id="blog-editor" className="glass-panel scroll-mt-6 rounded-[2.2rem] p-6">
             <div className="flex items-end justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Editor blogu</p>
