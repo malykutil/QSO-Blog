@@ -21,6 +21,8 @@ export const SOLAR_RELAY_META: Record<SolarRelayName, {
   bufik: { label: "Topení (bufík)", description: "Topení objektu", icon: "heat", requiresConfirmation: true },
   fan12v: { label: "Ventilátor 12 V", description: "Ventilace 12V větve", icon: "fan" },
   fan24v: { label: "Ventilátor 24 V", description: "Ventilace 24V větve", icon: "fan" },
+  aux: { label: "Pomocné relé", description: "Pomocné relé na BCM GPIO 23", icon: "load", requiresConfirmation: true },
+  aux2: { label: "Pomocné relé 2", description: "Pomocné relé na BCM GPIO 25", icon: "load", requiresConfirmation: true },
 };
 
 export type SolarIconName =
@@ -134,26 +136,6 @@ export function buildSolarAlerts({
       title: "Raspberry Pi má vysokou teplotu",
       detail: `CPU má ${rpiTemperature.toFixed(1)} °C, limit je ${SOLAR_ALERT_THRESHOLDS.rpiHighTemperatureC} °C.`,
     });
-  }
-
-  if (telemetry) {
-    const missingSensors = [
-      [telemetry.object_temperature, "DHT11 v objektu (Arduino D11)"],
-      [telemetry.mppt_temperature, "DHT11 u MPPT (Arduino D12)"],
-      [telemetry.battery_temperature, "BMP280 baterie"],
-      [telemetry.outside_temperature, "BMP280 venku"],
-      [telemetry.battery_voltage, "INA219"],
-      [telemetry.load_voltage_v, "INA219 zátěže"],
-      [telemetry.mq9_raw, "MQ-9"],
-    ].filter(([value]) => finite(value as number | null | undefined) === null).map(([, label]) => label);
-    if (missingSensors.length) {
-      alerts.push({
-        id: "missing-sensors",
-        level: "warning",
-        title: "Některé senzory neposílají data",
-        detail: missingSensors.join(", "),
-      });
-    }
   }
 
   if (relayError) {
