@@ -11,6 +11,7 @@ export type BlogPost = {
   content: string;
   coverImageUrl?: string | null;
   galleryImageUrls: string[];
+  viewCount: number;
   isPublished: boolean;
   publishedAt?: string | null;
 };
@@ -26,12 +27,13 @@ type BlogPostRow = {
   content?: string | null;
   cover_image_url?: string | null;
   gallery_image_urls?: string[] | null;
+  view_count?: number | null;
   is_published?: boolean | null;
   published_at?: string | null;
 };
 
 export const blogPostSelectFields =
-  "id, created_at, created_by, title, slug, category, excerpt, content, cover_image_url, gallery_image_urls, is_published, published_at";
+  "id, created_at, created_by, title, slug, category, excerpt, content, cover_image_url, gallery_image_urls, view_count, is_published, published_at";
 
 export const fallbackBlogPosts: BlogPost[] = featuredPosts.map((post) => ({
   title: post.title,
@@ -41,6 +43,7 @@ export const fallbackBlogPosts: BlogPost[] = featuredPosts.map((post) => ({
   content: post.content,
   coverImageUrl: null,
   galleryImageUrls: [],
+  viewCount: 0,
   publishedAt: post.publishedAt,
   isPublished: true,
 }));
@@ -96,6 +99,7 @@ export function normalizeBlogPost(row: BlogPostRow): BlogPost {
     content: row.content?.trim() || "",
     coverImageUrl: row.cover_image_url?.trim() || null,
     galleryImageUrls: normalizeGalleryImages(row.gallery_image_urls),
+    viewCount: Math.max(0, Number(row.view_count) || 0),
     isPublished: row.is_published ?? true,
     publishedAt: row.published_at ?? row.created_at ?? null,
   };

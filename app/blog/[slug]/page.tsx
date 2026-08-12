@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AppShell } from "@/app/components/app-shell";
 import { BlogImage } from "@/app/components/blog-image";
+import { BlogViewCounter } from "@/app/components/blog-view-counter";
 import { findFallbackBlogPost, formatBlogDate, normalizeBlogPost } from "@/src/lib/blog-data";
 import { getSupabasePublicServerClient } from "@/src/lib/supabase";
 
@@ -14,7 +15,7 @@ async function getBlogPost(slug: string) {
   if (supabase) {
     const { data, error } = await supabase
       .from("blog_posts")
-      .select("id, created_at, created_by, title, slug, category, excerpt, content, cover_image_url, gallery_image_urls, is_published, published_at")
+      .select("id, created_at, created_by, title, slug, category, excerpt, content, cover_image_url, gallery_image_urls, view_count, is_published, published_at")
       .eq("slug", slug)
       .eq("is_published", true)
       .maybeSingle();
@@ -74,7 +75,11 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
             <p className="text-xs uppercase tracking-[0.45em] text-sky-100/70">{post.category}</p>
             <h1 className="mt-5 font-display text-5xl leading-tight md:text-7xl">{post.title}</h1>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-sky-50/80">{post.excerpt}</p>
-            <p className="mt-6 text-sm uppercase tracking-[0.28em] text-sky-100/70">{formatBlogDate(post.publishedAt)}</p>
+            <p className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-sm uppercase tracking-[0.28em] text-sky-100/70">
+              <span>{formatBlogDate(post.publishedAt)}</span>
+              <span aria-hidden="true">·</span>
+              <BlogViewCounter slug={post.slug} initialCount={post.viewCount} />
+            </p>
           </div>
         </section>
 

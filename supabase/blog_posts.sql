@@ -11,13 +11,30 @@ create table if not exists public.blog_posts (
   content text not null,
   cover_image_url text,
   gallery_image_urls text[] not null default '{}',
+  view_count bigint not null default 0,
   is_published boolean not null default true,
   published_at timestamptz
 );
 
 alter table public.blog_posts
   add column if not exists cover_image_url text,
-  add column if not exists gallery_image_urls text[] not null default '{}';
+  add column if not exists gallery_image_urls text[] not null default '{}',
+  add column if not exists view_count bigint not null default 0;
+
+create or replace function public.increment_blog_post_view(post_slug text)
+returns bigint
+language sql
+security definer
+set search_path = public
+as $$
+  update public.blog_posts
+  set view_count = view_count + 1
+  where slug = post_slug and is_published = true
+  returning view_count;
+$$;
+
+revoke all on function public.increment_blog_post_view(text) from public;
+grant execute on function public.increment_blog_post_view(text) to anon, authenticated;
 
 create unique index if not exists blog_posts_slug_key on public.blog_posts (slug);
 create index if not exists blog_posts_published_at_idx on public.blog_posts (published_at desc);
