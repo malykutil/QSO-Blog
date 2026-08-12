@@ -14,7 +14,42 @@ export const SOLAR_MEASUREMENT_CONFIG = {
   onlineAgeMs: 90 * 1000,
   delayedAgeMs: 5 * 60 * 1000,
   upsCurrentDeadbandA: 0.01,
+  temperatureMinC: -50,
+  temperatureMaxC: 100,
+  maxTemperatureJumpC: 20,
 } as const;
+
+const TEMPERATURE_FIELDS = [
+  "rpi_cpu_temperature",
+  "object_temperature",
+  "battery_temperature",
+  "outside_temperature",
+  "mppt_temperature",
+] as const;
+
+type TemperatureField = (typeof TEMPERATURE_FIELDS)[number];
+
+export function isPlausibleTemperature(value: number, previousValue?: number | null) {
+  if (!Number.isFinite(value)) return false;
+  if (value < SOLAR_MEASUREMENT_CONFIG.temperatureMinC || value > SOLAR_MEASUREMENT_CONFIG.temperatureMaxC) return false;
+  return previousValue === undefined || previousValue === null || Math.abs(value - previousValue) <= SOLAR_MEASUREMENT_CONFIG.maxTemperatureJumpC;
+}
+
+export function sanitizeTemperatureFields(
+  sample: Record<string, unknown>,
+  previousSample?: Record<string, unknown> | null,
+) {
+  const sanitized = { ...sample };
+  for (const key of TEMPERATURE_FIELDS) {
+    const value = sanitized[key];
+    if (typeof value !== "number") continue;
+    const previousValue = previousSample?.[key];
+    if (!isPlausibleTemperature(value, typeof previousValue === "number" ? previousValue : null)) {
+      delete sanitized[key];
+    }
+  }
+  return sanitized;
+}
 
 export function calculateUpsChargePercent(voltage: number | null | undefined) {
   const safeVoltage = finite(voltage);
@@ -38,6 +73,13 @@ export function calculateSolarTotalCurrent(
   solar1Current: number | null | undefined,
 ) {
   return finite(solar1Current);
+}
+
+// DB field names are historical. Physical wiring: ACS1 = battery,
+// ACS2 = load, ACS3 = solar. Battery sign is inverted for the UI.
+export function calculateBatteryFlowCurrent(sample: SolarTelemetry) {
+  const batteryCurrent = finite(sample.solar1_current);
+  return batteryCurrent === null ? null : -batteryCurrent;
 }
 
 function calculatePower(voltage: number | null | undefined, current: number | null | undefined) {
@@ -67,10 +109,11 @@ export function getTelemetryFreshness(recordedAt: string | null | undefined, now
 }
 
 export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
-  const solarTotalCurrent = calculateSolarTotalCurrent(sample.solar1_current);
+  const solarTotalCurrent = calculateSolarTotalCurrent(sample.battery_current);
   const loadVoltage = finite(sample.solar2_voltage);
   const loadCurrent = finite(sample.solar2_current);
-  const batteryPower = calculatePower(sample.battery_voltage, sample.battery_current);
+  const batteryFlowCurrent = calculateBatteryFlowCurrent(sample);
+  const batteryPower = calculatePower(sample.battery_voltage, batteryFlowCurrent);
   const measuredLoadPower = finite(sample.load_power);
   const loadPower = measuredLoadPower ?? calculatePower(loadVoltage, loadCurrent);
   // Legacy INA219 columns carry the dedicated Waveshare UPS HAT values from RPi.
@@ -82,11 +125,14 @@ export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
     // napeti solarniho panelu tato instalace nemeri.
     mppt_humidity: finite(sample.solar1_voltage),
     solar_total_current: solarTotalCurrent,
+    battery_flow_current_a: batteryFlowCurrent,
     load_voltage_v: loadVoltage,
     load_current_a: loadCurrent,
     battery_power_w: batteryPower,
     load_power_w: loadPower,
-    battery_state: getBatteryFlowState(sample.battery_voltage, sample.battery_current),
+    // User-facing wiring after the requested value swap: A2 is displayed as
+    // battery current, while inverted A1 is displayed as load current.
+    battery_state: getBatteryFlowState(sample.battery_voltage, loadCurrent),
     ups_voltage_v: upsVoltage,
     ups_current_a: upsCurrent,
     ups_charge_percent: calculateUpsChargePercent(upsVoltage),
@@ -101,6 +147,7 @@ export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
     battery_charged_wh: 0,
     battery_discharged_wh: 0,
     load_energy_wh: 0,
+    consumption_energy_wh: 0,
   };
 }
 
@@ -115,7 +162,17 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
   const ordered = Array.from(uniqueByTimestamp.values()).sort(
     (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
   );
-  const history = ordered.map(enrichSolarTelemetry);
+  const previousValidTemperatures: Partial<Record<TemperatureField, number>> = {};
+  const history = ordered.map((sample) => {
+    const sanitized = sanitizeTemperatureFields(sample as unknown as Record<string, unknown>, previousValidTemperatures);
+    for (const key of TEMPERATURE_FIELDS) {
+      const value = sanitized[key];
+      if (typeof value === "number" && isPlausibleTemperature(value, previousValidTemperatures[key])) {
+        previousValidTemperatures[key] = value;
+      }
+    }
+    return enrichSolarTelemetry(sanitized as unknown as SolarTelemetry);
+  });
   let activeChargingMs = 0;
   let skippedGaps = 0;
   let solar1Ah = 0;
@@ -125,6 +182,7 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
   let batteryChargedWh = 0;
   let batteryDischargedWh = 0;
   let loadEnergyWh = 0;
+  let consumptionEnergyWh = 0;
 
   for (let index = 1; index < history.length; index += 1) {
     const previous = history[index - 1];
@@ -143,36 +201,49 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
       current.battery_charged_wh = batteryChargedWh;
       current.battery_discharged_wh = batteryDischargedWh;
       current.load_energy_wh = loadEnergyWh;
+      current.consumption_energy_wh = consumptionEnergyWh;
       continue;
     }
 
     const intervalHours = elapsedMs / 3_600_000;
-    if (previous.solar1_current !== null && current.solar1_current !== null) {
-      solar1Ah += Math.max(0, (previous.solar1_current + current.solar1_current) / 2) * intervalHours;
+    if (previous.solar_total_current !== null && current.solar_total_current !== null) {
+      solar1Ah += Math.max(0, (previous.solar_total_current + current.solar_total_current) / 2) * intervalHours;
     }
     if (previous.load_current_a !== null && current.load_current_a !== null) {
       loadAh += Math.max(0, (previous.load_current_a + current.load_current_a) / 2) * intervalHours;
     }
-    if (previous.battery_current !== null && current.battery_current !== null) {
-      const intervalAh = ((previous.battery_current + current.battery_current) / 2) * intervalHours;
-      if (intervalAh > 0) batteryChargedAh += intervalAh;
-      if (intervalAh < 0) batteryDischargedAh += Math.abs(intervalAh);
-    }
-    if (previous.battery_power_w !== null && current.battery_power_w !== null) {
-      const intervalWh = ((previous.battery_power_w + current.battery_power_w) / 2) * intervalHours;
-      if (intervalWh > 0) batteryChargedWh += intervalWh;
-      if (intervalWh < 0) batteryDischargedWh += Math.abs(intervalWh);
-    }
     if (previous.load_power_w !== null && current.load_power_w !== null) {
       loadEnergyWh += Math.max(0, (previous.load_power_w + current.load_power_w) / 2) * intervalHours;
     }
+    const previousDisplayedBatteryCurrent = previous.load_current_a;
+    const currentDisplayedBatteryCurrent = current.load_current_a;
+    const averageBatteryCurrent = previousDisplayedBatteryCurrent !== null && currentDisplayedBatteryCurrent !== null
+      ? (previousDisplayedBatteryCurrent + currentDisplayedBatteryCurrent) / 2
+      : null;
+    if (averageBatteryCurrent !== null && averageBatteryCurrent > 0) {
+      batteryChargedAh += averageBatteryCurrent * intervalHours;
+      if (previous.load_power_w !== null && current.load_power_w !== null) {
+        batteryChargedWh += (Math.abs(previous.load_power_w) + Math.abs(current.load_power_w)) / 2 * intervalHours;
+      }
+      if (previous.battery_flow_current_a !== null && current.battery_flow_current_a !== null) {
+        batteryDischargedAh += Math.abs((previous.battery_flow_current_a + current.battery_flow_current_a) / 2) * intervalHours;
+      }
+      if (previous.battery_power_w !== null && current.battery_power_w !== null) {
+        const intervalLoadWh = (Math.abs(previous.battery_power_w) + Math.abs(current.battery_power_w)) / 2 * intervalHours;
+        batteryDischargedWh += intervalLoadWh;
+        consumptionEnergyWh += intervalLoadWh;
+      }
+    } else if (averageBatteryCurrent !== null && averageBatteryCurrent < 0) {
+      batteryDischargedAh += Math.abs(averageBatteryCurrent) * intervalHours;
+      if (previous.load_power_w !== null && current.load_power_w !== null) {
+        const intervalBatteryWh = (Math.abs(previous.load_power_w) + Math.abs(current.load_power_w)) / 2 * intervalHours;
+        batteryDischargedWh += intervalBatteryWh;
+        consumptionEnergyWh += intervalBatteryWh;
+      }
+    }
 
-    const previousSolarActive =
-      previous.solar_total_current !== null &&
-      previous.solar_total_current > SOLAR_MEASUREMENT_CONFIG.solarActiveCurrentThresholdA;
-    const currentSolarActive =
-      current.solar_total_current !== null &&
-      current.solar_total_current > SOLAR_MEASUREMENT_CONFIG.solarActiveCurrentThresholdA;
+    const previousSolarActive = previous.solar_total_current !== null && previous.solar_total_current > SOLAR_MEASUREMENT_CONFIG.solarActiveCurrentThresholdA;
+    const currentSolarActive = current.solar_total_current !== null && current.solar_total_current > SOLAR_MEASUREMENT_CONFIG.solarActiveCurrentThresholdA;
     if (previousSolarActive || currentSolarActive) activeChargingMs += elapsedMs;
 
     current.solar1_ah = solar1Ah;
@@ -185,16 +256,17 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     current.battery_charged_wh = batteryChargedWh;
     current.battery_discharged_wh = batteryDischargedWh;
     current.load_energy_wh = loadEnergyWh;
+    current.consumption_energy_wh = consumptionEnergyWh;
   }
 
   const numeric = (key: keyof SolarEnergyPoint) =>
     history
       .map((sample) => sample[key])
       .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const solar1Values = numeric("solar1_current");
+  const solar1Values = numeric("solar_total_current");
   const loadValues = numeric("load_current_a");
   const solarTotalValues = numeric("solar_total_current");
-  const batteryCurrentValues = numeric("battery_current");
+  const batteryCurrentValues = numeric("load_current_a");
   const batteryVoltageValues = numeric("battery_voltage");
   const objectTemperatureValues = numeric("object_temperature");
 
@@ -215,6 +287,7 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
       battery_charged_wh: batteryChargedWh,
       battery_discharged_wh: batteryDischargedWh,
       load_energy_wh: loadEnergyWh,
+      consumption_energy_wh: consumptionEnergyWh,
       battery_max_charge_current_a: batteryCurrentValues.some((value) => value > 0) ? Math.max(...batteryCurrentValues.filter((value) => value > 0)) : null,
       battery_max_discharge_current_a: batteryCurrentValues.some((value) => value < 0) ? Math.abs(Math.min(...batteryCurrentValues.filter((value) => value < 0))) : null,
       battery_voltage_min_v: batteryVoltageValues.length ? Math.min(...batteryVoltageValues) : null,

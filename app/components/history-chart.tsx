@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SolarEnergyPoint } from "@/src/lib/solar-data";
-import { SOLAR_MEASUREMENT_CONFIG } from "@/src/lib/solar-energy";
 
 type NumericTelemetryKey = {
   [Key in keyof SolarEnergyPoint]: SolarEnergyPoint[Key] extends number | null ? Key : never;
@@ -10,11 +9,27 @@ type NumericTelemetryKey = {
 type ChartSeries = readonly (readonly [NumericTelemetryKey, string, string])[];
 type ChartReferenceLine = readonly [number, string, string];
 type DisplayPoint = { item: SolarEnergyPoint; sourceIndex: number };
+type TimeRange = { startMs: number; endMs: number };
+type DragState = TimeRange & { pointerId: number; startClientX: number };
+type PendingZoom = { spanMs: number; anchorMs: number; cursorRatio: number };
 
 const CHART_WIDTH = 900;
 const CHART_HEIGHT = 290;
 const CHART_PADDING = 20;
 const MAX_RENDERED_POINTS = 600;
+
+function clampTimeRange(range: TimeRange, fullStartMs: number, fullEndMs: number): TimeRange {
+  const safeFullEndMs = Math.max(fullStartMs + 1, fullEndMs);
+  const fullSpanMs = safeFullEndMs - fullStartMs;
+  const requestedSpanMs = Number.isFinite(range.endMs - range.startMs)
+    ? Math.max(1, range.endMs - range.startMs)
+    : fullSpanMs;
+  const spanMs = Math.min(requestedSpanMs, fullSpanMs);
+  const requestedStartMs = Number.isFinite(range.startMs) ? range.startMs : fullStartMs;
+  const startMs = Math.max(fullStartMs, Math.min(safeFullEndMs - spanMs, requestedStartMs));
+
+  return { startMs, endMs: startMs + spanMs };
+}
 
 function downsampleHistory(
   history: SolarEnergyPoint[],
@@ -76,38 +91,68 @@ function formatAxisDate(date: string, spanHours: number) {
   return new Intl.DateTimeFormat("cs-CZ", options).format(new Date(date));
 }
 
+function formatRangeDuration(milliseconds: number) {
+  const minutes = Math.max(1, Math.round(milliseconds / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toLocaleString("cs-CZ", { maximumFractionDigits: hours < 10 ? 1 : 0 })} h`;
+  return `${(hours / 24).toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} d`;
+}
+
 export function InteractiveHistoryChart({
   history,
   series,
   title,
   unit,
   referenceLines = [],
+  canRequestOlderHistory = false,
+  onRequestOlderHistory,
 }: {
   history: SolarEnergyPoint[];
   series: ChartSeries;
   title: string;
   unit: string;
   referenceLines?: readonly ChartReferenceLine[];
+  canRequestOlderHistory?: boolean;
+  onRequestOlderHistory?: () => void;
 }) {
   const plotHeight = CHART_HEIGHT - CHART_PADDING * 2;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [activeKeys, setActiveKeys] = useState<NumericTelemetryKey[]>(() => series.map(([key]) => key));
+  const [zoomRange, setZoomRange] = useState<TimeRange | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const chartRef = useRef<SVGSVGElement>(null);
+  const olderRequestPendingRef = useRef(false);
+  const dragStateRef = useRef<DragState | null>(null);
+  const pendingZoomRef = useRef<PendingZoom | null>(null);
+  const previousFullRangeStartRef = useRef<number | null>(null);
   const visibleSeries = series.filter(([key]) => activeKeys.includes(key));
-  const displayPoints = downsampleHistory(history, MAX_RENDERED_POINTS, series.map(([key]) => key));
+  const fullRangeStartMs = history[0] ? new Date(history[0].recorded_at).getTime() : 0;
+  const fullRangeEndMs = history[history.length - 1] ? new Date(history[history.length - 1].recorded_at).getTime() : fullRangeStartMs;
+  const fullRangeSpanMs = Math.max(1, fullRangeEndMs - fullRangeStartMs);
+  const zoomOverlapsHistory = zoomRange && zoomRange.endMs > fullRangeStartMs && zoomRange.startMs < fullRangeEndMs;
+  const visibleRange = zoomOverlapsHistory
+    ? clampTimeRange(zoomRange, fullRangeStartMs, fullRangeEndMs)
+    : { startMs: fullRangeStartMs, endMs: fullRangeEndMs };
+  const rangeStartMs = visibleRange.startMs;
+  const rangeEndMs = visibleRange.endMs;
+  const rangeSpanMs = Math.max(1, rangeEndMs - rangeStartMs);
+  const rangeHistory = history.filter((item) => {
+    const timestamp = new Date(item.recorded_at).getTime();
+    return timestamp >= rangeStartMs && timestamp <= rangeEndMs;
+  });
+  const displayPoints = downsampleHistory(rangeHistory, MAX_RENDERED_POINTS, series.map(([key]) => key));
   const visibleHistory = displayPoints.map(({ item }) => item);
   const availableValues = series.flatMap(([key]) => history
     .map((item) => item[key])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
-  const values = visibleSeries.flatMap(([key]) => history
+  const values = visibleSeries.flatMap(([key]) => rangeHistory
     .map((item) => item[key])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value)))
     .concat(referenceLines.map(([value]) => value));
   const max = Math.max(1, ...values);
   const min = Math.min(0, ...values);
   const span = Math.max(1, max - min);
-  const rangeStartMs = history[0] ? new Date(history[0].recorded_at).getTime() : 0;
-  const rangeEndMs = history[history.length - 1] ? new Date(history[history.length - 1].recorded_at).getTime() : rangeStartMs;
-  const rangeSpanMs = Math.max(1, rangeEndMs - rangeStartMs);
   const pointX = (index: number) => visibleHistory.length > 1
     ? ((new Date(visibleHistory[index].recorded_at).getTime() - rangeStartMs) / rangeSpanMs) * CHART_WIDTH
     : CHART_WIDTH / 2;
@@ -117,36 +162,16 @@ export function InteractiveHistoryChart({
   const referenceY = (value: number) => CHART_HEIGHT
     - ((value - min) / span) * plotHeight
     - CHART_PADDING;
-  const gapPrefixes = Object.fromEntries(series.map(([key]) => {
-    const prefix = Array.from({ length: history.length }, () => 0);
-    for (let index = 1; index < history.length; index += 1) {
-      const previous = history[index - 1][key];
-      const current = history[index][key];
-      const timestampGap = new Date(history[index].recorded_at).getTime()
-        - new Date(history[index - 1].recorded_at).getTime();
-      const isBreak =
-        typeof previous !== "number" || !Number.isFinite(previous) ||
-        typeof current !== "number" || !Number.isFinite(current) ||
-        timestampGap > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs;
-      prefix[index] = prefix[index - 1] + (isBreak ? 1 : 0);
-    }
-    return [key, prefix];
-  })) as Partial<Record<NumericTelemetryKey, number[]>>;
   const pathFor = (key: NumericTelemetryKey) => {
     let path = "";
     let previousSourceIndex: number | null = null;
     visibleHistory.forEach((item, index) => {
       const value = item[key];
       if (typeof value !== "number" || !Number.isFinite(value)) {
-        previousSourceIndex = null;
         return;
       }
       const sourceIndex = displayPoints[index].sourceIndex;
-      const gapPrefix = gapPrefixes[key];
-      const startsNewSegment =
-        previousSourceIndex === null ||
-        !gapPrefix ||
-        gapPrefix[sourceIndex] - gapPrefix[previousSourceIndex] > 0;
+      const startsNewSegment = previousSourceIndex === null;
       path += `${startsNewSegment ? "M" : "L"}${pointX(index).toFixed(1)} ${pointY(key, index).toFixed(1)} `;
       previousSourceIndex = sourceIndex;
     });
@@ -162,7 +187,59 @@ export function InteractiveHistoryChart({
     };
   });
 
+  const requestOlderData = () => {
+    if (!canRequestOlderHistory || !onRequestOlderHistory || olderRequestPendingRef.current) return false;
+    olderRequestPendingRef.current = true;
+    onRequestOlderHistory();
+    return true;
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<SVGRectElement>) => {
+    if (history.length < 2) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startMs: rangeStartMs,
+      endMs: rangeEndMs,
+    };
+    setHoveredIndex(null);
+    setIsDragging(true);
+  };
+
+  const finishPointerDrag = (event: React.PointerEvent<SVGRectElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragStateRef.current = null;
+    setIsDragging(false);
+  };
+
   const handlePointerMove = (event: React.PointerEvent<SVGRectElement>) => {
+    const dragState = dragStateRef.current;
+    if (dragState?.pointerId === event.pointerId) {
+      event.preventDefault();
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const dragDistancePx = event.clientX - dragState.startClientX;
+      const draggedSpanMs = dragState.endMs - dragState.startMs;
+      const timeShiftMs = -(dragDistancePx / Math.max(1, bounds.width)) * draggedSpanMs;
+      const requestedRange = {
+        startMs: dragState.startMs + timeShiftMs,
+        endMs: dragState.endMs + timeShiftMs,
+      };
+
+      if (requestedRange.startMs < fullRangeStartMs) {
+        if (dragDistancePx > 24 && requestOlderData()) return;
+      }
+      const nextRange = clampTimeRange(requestedRange, fullRangeStartMs, fullRangeEndMs);
+
+      setHoveredIndex(null);
+      setZoomRange(draggedSpanMs >= fullRangeSpanMs * 0.999
+        ? null
+        : nextRange);
+      return;
+    }
     if (visibleHistory.length < 2) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const relativeX = ((event.clientX - bounds.left) / bounds.width) * CHART_WIDTH;
@@ -178,21 +255,105 @@ export function InteractiveHistoryChart({
     setHoveredIndex(nearestIndex);
   };
 
+  const handleWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (history.length < 2 || fullRangeSpanMs <= 1) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+    const bounds = chart.getBoundingClientRect();
+    const cursorRatio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const positiveGaps = history.slice(1).map((item, index) =>
+      new Date(item.recorded_at).getTime() - new Date(history[index].recorded_at).getTime()
+    ).filter((gap) => gap > 0).sort((left, right) => left - right);
+    const typicalGapMs = positiveGaps.length ? positiveGaps[Math.floor(positiveGaps.length / 2)] : 15000;
+    const minimumSpanMs = Math.min(fullRangeSpanMs, Math.max(60000, typicalGapMs * 4));
+    const zoomFactor = Math.exp(event.deltaY * 0.0015);
+    const requestedSpanMs = (pendingZoomRef.current?.spanMs ?? rangeSpanMs) * zoomFactor;
+    const nextSpanMs = Math.max(minimumSpanMs, Math.min(fullRangeSpanMs, requestedSpanMs));
+    const anchorMs = rangeStartMs + cursorRatio * rangeSpanMs;
+    if (
+      event.deltaY > 0 &&
+      requestedSpanMs >= fullRangeSpanMs * 0.999 &&
+      canRequestOlderHistory &&
+      onRequestOlderHistory
+    ) {
+      pendingZoomRef.current = { spanMs: requestedSpanMs, anchorMs, cursorRatio };
+      requestOlderData();
+      setZoomRange({ startMs: rangeStartMs, endMs: rangeEndMs });
+      return;
+    }
+    pendingZoomRef.current = null;
+    const nextRange = clampTimeRange({
+      startMs: anchorMs - cursorRatio * nextSpanMs,
+      endMs: anchorMs + (1 - cursorRatio) * nextSpanMs,
+    }, fullRangeStartMs, fullRangeEndMs);
+
+    setHoveredIndex(null);
+    setZoomRange(nextSpanMs >= fullRangeSpanMs * 0.999
+      ? null
+      : nextRange);
+  };
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.addEventListener("wheel", handleWheel, { passive: false });
+    return () => chart.removeEventListener("wheel", handleWheel);
+  });
+
+  useEffect(() => {
+    const previousStartMs = previousFullRangeStartRef.current;
+    previousFullRangeStartRef.current = fullRangeStartMs;
+    if (previousStartMs === null || previousStartMs === fullRangeStartMs) return;
+
+    olderRequestPendingRef.current = false;
+    const wasDragging = dragStateRef.current !== null;
+    dragStateRef.current = null;
+    if (wasDragging) window.requestAnimationFrame(() => setIsDragging(false));
+    if (fullRangeStartMs > previousStartMs) {
+      pendingZoomRef.current = null;
+      return;
+    }
+
+    const pendingZoom = pendingZoomRef.current;
+    if (!pendingZoom) return;
+    const nextSpanMs = Math.min(fullRangeSpanMs, pendingZoom.spanMs);
+    const nextRange = clampTimeRange({
+      startMs: pendingZoom.anchorMs - pendingZoom.cursorRatio * nextSpanMs,
+      endMs: pendingZoom.anchorMs + (1 - pendingZoom.cursorRatio) * nextSpanMs,
+    }, fullRangeStartMs, fullRangeEndMs);
+    const nextZoomRange = nextSpanMs >= fullRangeSpanMs * 0.999
+      ? null
+      : nextRange;
+    pendingZoomRef.current = null;
+    const animationFrame = window.requestAnimationFrame(() => {
+      setIsDragging(false);
+      setZoomRange(nextZoomRange);
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [fullRangeEndMs, fullRangeSpanMs, fullRangeStartMs]);
+
   const hoveredPoint = hoveredIndex === null ? null : visibleHistory[hoveredIndex];
   const tooltipX = hoveredIndex === null ? 0 : Math.max(8, Math.min(CHART_WIDTH - 218, pointX(hoveredIndex) - 109));
   const axisLabels = [max, (max + min) / 2, min];
+  const isZoomed = rangeSpanMs < fullRangeSpanMs * 0.999;
   const toggleSeries = (key: NumericTelemetryKey) => setActiveKeys((current) => current.includes(key)
     ? current.filter((item) => item !== key)
     : [...current, key]);
 
   return <div className="solar-panel p-4 md:p-5">
-    <div>
-      <p className="solar-eyebrow">Historie</p>
-      <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">{title}</h2>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="solar-eyebrow">Historie</p>
+        <h2 className="mt-1 text-xl font-semibold text-[var(--solar-text)]">{title}</h2>
+        {history.length >= 2 ? <p className="mt-1 text-sm text-slate-500">Rozsah {formatRangeDuration(rangeSpanMs)} · kolečko mění časovou osu, tažením posunete historii{canRequestOlderHistory ? "; na levém okraji se načtou starší data" : ""}</p> : null}
+      </div>
+      {isZoomed ? <button type="button" onClick={() => setZoomRange(null)} className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50">Zobrazit celé období</button> : null}
     </div>
     {history.length < 2 || availableValues.length < 2 ? <p className="solar-alert solar-alert--info mt-4">Pro zvolené veličiny nejsou v tomto období alespoň dvě platná měření.</p> : <>
       <div className="mt-4 overflow-hidden rounded-lg bg-slate-950 p-3">
-        <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="h-auto w-full touch-none" role="img" aria-label={`${title}. Graf zobrazuje celé zvolené období, najetím zobrazíte hodnoty.`} onMouseLeave={() => setHoveredIndex(null)}>
+        <svg ref={chartRef} viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className={`h-auto w-full touch-none ${isDragging ? "cursor-grabbing" : "cursor-grab"}`} role="img" aria-label={`${title}. Kolečkem myši měníte časový rozsah, tažením posouváte historii a najetím zobrazíte hodnoty.`} onMouseLeave={() => setHoveredIndex(null)} onDoubleClick={() => setZoomRange(null)}>
           <g stroke="#29404c" strokeWidth="1">
             <path d={`M0 ${CHART_PADDING}H${CHART_WIDTH}`} />
             <path d={`M0 ${CHART_HEIGHT / 2}H${CHART_WIDTH}`} />
@@ -220,7 +381,10 @@ export function InteractiveHistoryChart({
               {visibleSeries.map(([key, label, color], seriesIndex) => <g key={String(key)} transform={`translate(12 ${45 + seriesIndex * 22})`}><circle cx="4" cy="-4" r="4" fill={color} /><text x="14" y="0" fill="#334155" fontSize="12">{label}: {formatValue(hoveredPoint[key], unit)}</text></g>)}
             </g>
           </> : null}
-          <rect x="0" y="0" width={CHART_WIDTH} height={CHART_HEIGHT} fill="transparent" onPointerMove={handlePointerMove} />
+          <rect x="0" y="0" width={CHART_WIDTH} height={CHART_HEIGHT} fill="transparent" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishPointerDrag} onPointerCancel={finishPointerDrag} onLostPointerCapture={() => {
+            dragStateRef.current = null;
+            setIsDragging(false);
+          }} />
         </svg>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -229,7 +393,7 @@ export function InteractiveHistoryChart({
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {visibleSeries.map(([key, label, color]) => {
-          const numbers = history.map((item) => item[key]).filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+          const numbers = rangeHistory.map((item) => item[key]).filter((item): item is number => typeof item === "number" && Number.isFinite(item));
           const minimum = numbers.length ? Math.min(...numbers) : null;
           const average = numbers.length ? numbers.reduce((total, item) => total + item, 0) / numbers.length : null;
           const maximum = numbers.length ? Math.max(...numbers) : null;

@@ -6,6 +6,7 @@ import { AppShell } from "@/app/components/app-shell";
 import { DailySummary, BatteryStatus, EnergyFlow, OverviewMetrics, SensorGrid, UpsStatus } from "@/app/components/solar-energy-overview";
 import { EventTimeline } from "@/app/components/solar-event-timeline";
 import { SolarHistoryControls, type HistoryRange } from "@/app/components/solar-history-controls";
+import { SolarAiSummary } from "@/app/components/solar-ai-summary";
 import { RelayCard, RelayConfirmationDialog } from "@/app/components/solar-relay-card";
 import { AlertList, SolarPanel } from "@/app/components/solar-ui";
 import { InteractiveHistoryChart } from "@/app/components/history-chart";
@@ -30,6 +31,12 @@ type SolarPayload = {
   canControl: boolean;
   alarmActive: boolean;
   alarmResetPending: boolean;
+  relayCyclePending: boolean;
+};
+
+type WeatherPayload = {
+  forecastSource?: string;
+  daily?: Array<{ estimatedKwh?: number | null }>;
 };
 
 const emptySummary: SolarEnergySummary = {
@@ -47,6 +54,7 @@ const emptySummary: SolarEnergySummary = {
   battery_charged_wh: 0,
   battery_discharged_wh: 0,
   load_energy_wh: 0,
+  consumption_energy_wh: 0,
   battery_max_charge_current_a: null,
   battery_max_discharge_current_a: null,
   battery_voltage_min_v: null,
@@ -58,6 +66,8 @@ const emptySummary: SolarEnergySummary = {
   unique_samples: 0,
 };
 
+const historyRangeOrder: readonly HistoryRange[] = ["1h", "6h", "24h", "2d", "7d", "30d"];
+
 function normalizePayload(payload: SolarPayload): SolarPayload {
   return {
     ...payload,
@@ -68,6 +78,7 @@ function normalizePayload(payload: SolarPayload): SolarPayload {
     alarmActive: Boolean(payload.alarmActive),
     alarmResetPending: Boolean(payload.alarmResetPending),
     canControl: Boolean(payload.canControl),
+    relayCyclePending: Boolean(payload.relayCyclePending),
   };
 }
 
@@ -87,6 +98,7 @@ function formatDateTime(value: string | null | undefined) {
 export default function SolarPage() {
   const [payload, setPayload] = useState<SolarPayload | null>(null);
   const [historyRange, setHistoryRange] = useState<HistoryRange>("24h");
+  const [loadedHistoryRange, setLoadedHistoryRange] = useState<HistoryRange>("24h");
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,16 +108,24 @@ export default function SolarPage() {
   const [pendingConfirmation, setPendingConfirmation] = useState<{ relay: SolarRelayName; desiredState: boolean } | null>(null);
   const [alarmResetBusy, setAlarmResetBusy] = useState(false);
   const [alarmResetError, setAlarmResetError] = useState<string | null>(null);
+  const [cycleBusy, setCycleBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [weather, setWeather] = useState<WeatherPayload | null>(null);
+
+  useEffect(() => {
+    fetch("/api/weather", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() as Promise<WeatherPayload> : null)
+      .then((nextWeather) => setWeather(nextWeather))
+      .catch(() => setWeather(null));
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     setHistoryLoading(true);
-    setPayload((current) => current ? { ...current, history: [] } : current);
 
     const loadHistory = async () => {
       try {
-        const response = await fetch(`/api/solar?range=${historyRange}`, { cache: "no-store", signal: controller.signal });
+        const response = await fetch(`/api/solar?range=${loadedHistoryRange}`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("solar-history");
         const nextPayload = normalizePayload(await response.json() as SolarPayload);
         setPayload(nextPayload);
@@ -121,7 +141,7 @@ export default function SolarPage() {
     };
     void loadHistory();
     return () => controller.abort();
-  }, [historyRange]);
+  }, [loadedHistoryRange]);
 
   useEffect(() => {
     let controller: AbortController | null = null;
@@ -156,7 +176,24 @@ export default function SolarPage() {
   }, []);
 
   const telemetry = payload?.telemetry ?? null;
+  // Zobrazené názvy odpovídají skutečnému zapojení: solární proud = ACS3,
+  // proud baterie = ACS2 a proud zátěže = ACS1.
+  // Zobrazené názvy odpovídají původnímu mapování instalace.
   const history = payload?.history ?? [];
+  const requestOlderHistory = () => setLoadedHistoryRange((current) => {
+    const currentIndex = historyRangeOrder.indexOf(current);
+    return historyRangeOrder[Math.min(currentIndex + 1, historyRangeOrder.length - 1)];
+  });
+  const changeHistoryRange = (range: HistoryRange) => {
+    setPayload((current) => current ? { ...current, history: [] } : current);
+    setHistoryRange(range);
+    setLoadedHistoryRange(range);
+  };
+  const chartHistoryProps = {
+    history,
+    canRequestOlderHistory: loadedHistoryRange !== historyRangeOrder[historyRangeOrder.length - 1],
+    onRequestOlderHistory: requestOlderHistory,
+  };
   const summary = payload?.energySummary ?? emptySummary;
   const freshness = getTelemetryFreshness(telemetry?.recorded_at, now);
   const mq9AirQuality = getMq9AirQuality(telemetry?.mq9_raw);
@@ -166,7 +203,7 @@ export default function SolarPage() {
   const activeRelays = (Object.keys(payload?.relays ?? defaultSolarRelayState) as SolarRelayName[]).filter((relay) => (payload?.relays ?? defaultSolarRelayState)[relay]);
 
   const executeRelayCommand = async (relay: SolarRelayName, desiredState: boolean) => {
-    if (!payload || busyRelay || freshness !== "online" || !payload.canControl || fireAlarmActive) return;
+    if (!payload || busyRelay || !payload.canControl || fireAlarmActive) return;
     setBusyRelay(relay);
     setNotice(null);
     setRelayErrors((current) => ({ ...current, [relay]: null }));
@@ -218,6 +255,24 @@ export default function SolarPage() {
     }
   };
 
+  const requestRelayCycle = async () => {
+    if (!payload?.canControl || fireAlarmActive || cycleBusy || payload.relayCyclePending) return;
+    if (!window.confirm("Spustit 30sekundový rychlý test relé? Budou postupně sepnuta pouze relé na GPIO 17, 4, 27, 22, 23 a 25. GPIO 24 a 18 se testu nezúčastní.")) return;
+    setCycleBusy(true);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/solar/cycle", { method: "POST" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Test relé se nepodařilo naplánovat.");
+      setPayload((current) => current ? { ...current, relayCyclePending: true } : current);
+      setNotice("Test relé byl naplánován. RPi postupně sepne šest bezpečných výstupů a po 30 sekundách je vypne.");
+    } catch (cycleError) {
+      setNotice(cycleError instanceof Error ? cycleError.message : "Test relé se nepodařilo naplánovat.");
+    } finally {
+      setCycleBusy(false);
+    }
+  };
+
   return <AppShell compactMobile>
     <div className="solar-app mx-auto w-full max-w-[1500px]">
       <header className="solar-header">
@@ -228,6 +283,7 @@ export default function SolarPage() {
       <div className="mt-4"><AlertList alerts={alerts} /></div>
       {error ? <p className="solar-alert solar-alert--danger">{error}</p> : null}
       {notice ? <p className="solar-alert solar-alert--info">{notice}</p> : null}
+      {payload ? <div className="mt-4"><SolarAiSummary telemetry={telemetry} history={history} summary={summary} relays={payload.relays} forecast={{ estimatedKwh: weather?.daily?.[0]?.estimatedKwh ?? null, source: weather?.forecastSource ?? null }} offline={freshness === "offline"} alarmActive={fireAlarmActive} /></div> : null}
       {loading && !payload ? <div className="solar-skeleton h-56" aria-label="Načítám telemetrii" /> : <div className="mt-4"><OverviewMetrics telemetry={telemetry} freshness={freshness} now={now} /></div>}
 
       <nav className="solar-section-nav" aria-label="Sekce dashboardu">
@@ -239,26 +295,27 @@ export default function SolarPage() {
 
         <UpsStatus telemetry={telemetry} />
 
-        <SolarPanel id="zarizeni" title="Ovládání zařízení" eyebrow={`${activeRelays.length} z 6 požadavků zapnuto`}>
+        <SolarPanel id="zarizeni" title="Ovládání zařízení" eyebrow={`${activeRelays.length} z 8 požadavků zapnuto`}>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-3xl text-sm leading-6 text-[var(--solar-muted)]">Příkaz se zapíše pouze přes zabezpečené serverové API a UI následně ověří stav uložený v databázi. Samostatná fyzická zpětná vazba relé zatím není dostupná.</p>{!payload?.canControl ? <a href="/login" className="solar-link">Přihlásit pro ovládání</a> : null}</div>
           {freshness !== "online" ? <p className="solar-alert solar-alert--warning mt-4">Ovládání je zablokováno, protože telemetrie není aktuální.</p> : null}
           {fireAlarmActive ? <div className="solar-alert solar-alert--danger mt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong>Ovládání je zablokováno aktivním MQ-9 poplachem.</strong><p className="mt-1">Reset proveď až po fyzické kontrole objektu. Relé zůstanou vypnutá.</p></div>{payload?.canControl ? <button type="button" className="solar-alarm-reset" disabled={alarmResetBusy || payload.alarmResetPending || freshness !== "online"} onClick={() => void requestAlarmReset()}>{payload.alarmResetPending ? "Čekám na RPi…" : alarmResetBusy ? "Odesílám…" : "Potvrdit a vypnout poplach"}</button> : <a href="/login" className="solar-link">Přihlásit pro vypnutí</a>}</div>{alarmResetError ? <p className="mt-3 font-semibold">{alarmResetError}</p> : null}</div> : null}
-          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">{(Object.keys(defaultSolarRelayState) as SolarRelayName[]).map((relay) => <RelayCard key={relay} relay={relay} requestedState={payload?.relays[relay] ?? false} updatedAt={payload?.relayUpdatedAt[relay]} disabled={!payload?.canControl || freshness !== "online" || busyRelay !== null || fireAlarmActive} busy={busyRelay === relay} error={relayErrors[relay]} onToggle={requestRelayCommand} />)}</div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/60 bg-amber-50/70 p-4 dark:bg-amber-950/20"><div className="min-w-0 flex-1"><p className="font-semibold text-[var(--solar-text)]">Rychlý test relé · 10 s</p><p className="mt-1 text-sm leading-5 text-[var(--solar-muted)]">Testuje pouze GPIO 17, 4, 27, 22, 23 a 25. Solární větve na GPIO 24 a 18 zůstávají nedotčené.</p></div><button type="button" className="solar-alarm-reset" disabled={!payload?.canControl || freshness !== "online" || fireAlarmActive || cycleBusy || Boolean(payload?.relayCyclePending)} onClick={() => void requestRelayCycle()}>{payload?.relayCyclePending ? "Test právě probíhá…" : cycleBusy ? "Odesílám…" : "Spustit test relé"}</button></div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">{(Object.keys(defaultSolarRelayState) as SolarRelayName[]).map((relay) => <RelayCard key={relay} relay={relay} requestedState={payload?.relays[relay] ?? false} updatedAt={payload?.relayUpdatedAt[relay]} disabled={!payload?.canControl || busyRelay !== null || fireAlarmActive} busy={busyRelay === relay} error={relayErrors[relay]} onToggle={requestRelayCommand} />)}</div>
         </SolarPanel>
 
         <DailySummary summary={summary} />
 
         <section id="grafy" className="scroll-mt-24 grid gap-4">
-          <SolarHistoryControls value={historyRange} loading={historyLoading} onChange={setHistoryRange} />
-          {historyLoading ? <><div className="solar-skeleton h-72" /><div className="solar-skeleton h-72" /></> : <>
-            <InteractiveHistoryChart history={history} series={[["solar1_current", "Solární vstup", "#f59e0b"], ["load_current_a", "Zátěž", "#38bdf8"], ["battery_current", "Baterie", "#7c3aed"]]} title="Proudy všech měřených větví" unit="A" />
-            <InteractiveHistoryChart history={history} series={[["battery_power_w", "Výkon baterie", "#7c3aed"], ["load_power_w", "Výkon zátěže", "#ef4444"]]} title="Výkon do baterie a do zátěže" unit="W" />
-            <InteractiveHistoryChart history={history} series={[["solar1_ah", "Solární vstup", "#f59e0b"], ["load_ah", "Zátěž", "#38bdf8"], ["battery_charged_ah", "Nabito do baterie", "#7c3aed"], ["battery_discharged_ah", "Odebráno z baterie", "#ef4444"]]} title="Kumulované ampérhodiny ve zvoleném období" unit="Ah" />
-            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["battery_voltage", "Baterie", "#2563eb"], ["load_voltage_v", "Zátěž", "#dc2626"]]} title="Napětí baterie a zátěže" unit="V" /><InteractiveHistoryChart history={history} series={[["battery_current", "Baterie", "#7c3aed"], ["load_current_a", "Zátěž", "#38bdf8"]]} title="Proud baterie a zátěže" unit="A" /></div>
+          <SolarHistoryControls value={historyRange} loading={historyLoading} onChange={changeHistoryRange} />
+          {historyLoading && !history.length ? <><div className="solar-skeleton h-72" /><div className="solar-skeleton h-72" /></> : <>
+            <InteractiveHistoryChart {...chartHistoryProps} series={[["solar_total_current", "Solární vstup", "#f59e0b"], ["load_current_a", "Baterie", "#7c3aed"], ["battery_flow_current_a", "Zátěž", "#38bdf8"]]} title="Proudy všech měřených větví" unit="A" />
+            <InteractiveHistoryChart {...chartHistoryProps} series={[["battery_power_w", "Výkon zátěže", "#7c3aed"], ["load_power_w", "Výkon baterie", "#ef4444"]]} title="Výkon do zátěže a do baterie" unit="W" />
+            <InteractiveHistoryChart {...chartHistoryProps} series={[["solar1_ah", "Solární vstup", "#f59e0b"], ["load_ah", "Zátěž", "#38bdf8"], ["battery_charged_ah", "Nabito do baterie", "#7c3aed"], ["battery_discharged_ah", "Odebráno z baterie", "#ef4444"], ["battery_net_ah", "Zbývá (nabito − vybito)", "#16a34a"]]} title="Kumulované ampérhodiny ve zvoleném období" unit="Ah" />
+            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart {...chartHistoryProps} series={[["battery_voltage", "Baterie", "#2563eb"], ["load_voltage_v", "Zátěž", "#dc2626"]]} title="Napětí baterie a zátěže" unit="V" /><InteractiveHistoryChart {...chartHistoryProps} series={[["load_current_a", "Baterie", "#7c3aed"], ["battery_flow_current_a", "Zátěž", "#38bdf8"]]} title="Proud baterie a zátěže" unit="A" /></div>
             <SolarPanel eyebrow="Baterie" title="Procento nabití"><p className="solar-alert solar-alert--info mt-4">Historie stavu nabití zatím není dostupná. Datový model nemá údaj z BMS ani kalibrované procento.</p></SolarPanel>
-            <InteractiveHistoryChart history={history} series={[["object_temperature", "Uvnitř", "#ea580c"], ["outside_temperature", "Venku", "#0284c7"], ["battery_temperature", "Baterie", "#7c3aed"], ["mppt_temperature", "MPPT", "#dc2626"]]} title="Teploty" unit="°C" />
-            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart history={history} series={[["object_humidity", "Uvnitř · D11", "#0891b2"], ["mppt_humidity", "MPPT · D12", "#7c3aed"]]} title="Vlhkost DHT11" unit="%" /><InteractiveHistoryChart history={history} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
-            <InteractiveHistoryChart history={history} series={[["mq9_raw", "MQ-9", "#f97316"]]} title="CO a hořlavé plyny (MQ-9)" unit="RAW" referenceLines={[[MQ9_CRITICAL_RAW + 1, "Hranice poplachu", "#dc2626"]]} />
+            <InteractiveHistoryChart {...chartHistoryProps} series={[["object_temperature", "Uvnitř", "#ea580c"], ["outside_temperature", "Venku", "#0284c7"], ["battery_temperature", "Baterie", "#7c3aed"], ["mppt_temperature", "MPPT", "#dc2626"]]} title="Teploty" unit="°C" />
+            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart {...chartHistoryProps} series={[["object_humidity", "Uvnitř · D11", "#0891b2"], ["mppt_humidity", "MPPT · D12", "#7c3aed"]]} title="Vlhkost DHT11" unit="%" /><InteractiveHistoryChart {...chartHistoryProps} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
+            <InteractiveHistoryChart {...chartHistoryProps} series={[["mq9_raw", "MQ-9", "#f97316"]]} title="CO a hořlavé plyny (MQ-9)" unit="RAW" referenceLines={[[MQ9_CRITICAL_RAW + 1, "Hranice poplachu", "#dc2626"]]} />
           </>}
         </section>
 

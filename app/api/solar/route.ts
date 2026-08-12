@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdminClient, getSupabaseRouteClient } from "@/src/lib/supabase-server";
 import { hasSolarControlSession } from "@/src/lib/solar-auth";
 import { defaultSolarRelayState, solarExtendedTelemetryFields, solarTelemetryFields, type SolarTelemetry } from "@/src/lib/solar-data";
-import { analyzeSolarEnergy, enrichSolarTelemetry } from "@/src/lib/solar-energy";
+import { analyzeSolarEnergy, enrichSolarTelemetry, sanitizeTemperatureFields } from "@/src/lib/solar-energy";
 import { isMq9Critical } from "@/src/lib/mq9-air-quality";
 import { isMq9AlarmResetMarker } from "@/src/lib/mq9-alarm";
 
@@ -107,16 +107,17 @@ export async function GET(request: NextRequest) {
 
   const range = request.nextUrl.searchParams.get("range") ?? "24h";
   const latestOnly = request.nextUrl.searchParams.get("latest") === "1";
-  const rangeHours = range === "1h" ? 1 : range === "6h" ? 6 : range === "7d" ? 24 * 7 : range === "30d" ? 24 * 30 : 24;
+  const rangeHours = range === "1h" ? 1 : range === "6h" ? 6 : range === "2d" ? 24 * 2 : range === "7d" ? 24 * 7 : range === "30d" ? 24 * 30 : 24;
   const since = new Date(Date.now() - rangeHours * 60 * 60 * 1000).toISOString();
   const todaySince = getLocalDayStartIso();
 
-  const [latestResult, extendedLatestResult, historyResult, todayResult, relaysResult] = await Promise.all([
+  const [latestResult, extendedLatestResult, historyResult, todayResult, relaysResult, cycleResult] = await Promise.all([
     supabase.from("solar_telemetry").select(solarTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("solar_telemetry").select(solarExtendedTelemetryFields).order("recorded_at", { ascending: false }).limit(1).maybeSingle(),
     latestOnly ? Promise.resolve({ data: [], error: null }) : fetchTelemetryHistory(supabase, solarTelemetryFields, since),
     fetchTelemetryHistory(supabase, solarTelemetryFields, todaySince),
     supabase.from("solar_relay_states").select("relay,is_on,updated_at").order("relay"),
+    supabase.from("solar_relay_cycle_requests").select("id,requested_at").eq("status", "pending").order("requested_at", { ascending: true }).limit(1).maybeSingle(),
   ]);
   let telemetry: Record<string, unknown> | null = latestResult.data as Record<string, unknown> | null;
   let history: Record<string, unknown>[] = (historyResult.data ?? []) as Record<string, unknown>[];
@@ -153,6 +154,7 @@ export async function GET(request: NextRequest) {
       alarmResetPending,
       relayUpdatedAt: Object.fromEntries((relaysResult.data ?? []).map((row) => [row.relay, row.updated_at])),
       canControl: await canManageSolar(),
+      relayCyclePending: cycleResult.error ? false : Boolean(cycleResult.data),
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
@@ -164,10 +166,16 @@ export async function POST(request: NextRequest) {
   try { payload = await request.json(); } catch { return NextResponse.json({ error: "Neplatný JSON." }, { status: 400 }); }
   const allowed = ["solar1_voltage", "solar2_voltage", "battery_voltage", "solar1_current", "solar2_current", "battery_current", "solar1_power", "solar2_power", "load_power", "solar_energy_today_wh", "load_energy_today_wh", "rpi_cpu_temperature", "object_temperature", "object_humidity", "battery_temperature", "outside_temperature", "outside_pressure", "mq9_raw", "mq9_voltage", "mppt_temperature", ...extendedArduinoFields];
   const values = Object.fromEntries(allowed.filter((key) => typeof payload[key] === "number" && Number.isFinite(payload[key])).map((key) => [key, payload[key]]));
+  const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
+  if (!supabase) return NextResponse.json({ error: "Supabase nenastaveno." }, { status: 503 });
+  const latestResult = await supabase.from("solar_telemetry").select("rpi_cpu_temperature,object_temperature,battery_temperature,outside_temperature,mppt_temperature").order("recorded_at", { ascending: false }).limit(1).maybeSingle();
+  const sanitizedPrevious = latestResult.data
+    ? sanitizeTemperatureFields(latestResult.data as Record<string, unknown>)
+    : null;
+  const sanitizedValues = sanitizeTemperatureFields(values, sanitizedPrevious);
+  for (const key of Object.keys(values)) if (!(key in sanitizedValues)) delete values[key];
   if (typeof payload.mq9_alarm === "boolean") values.mq9_alarm = payload.mq9_alarm;
   if (Object.keys(values).length === 0) return NextResponse.json({ error: "Chybí číselná telemetrie." }, { status: 400 });
-  const supabase = getSupabaseAdminClient() ?? (await getSupabaseRouteClient());
-  if (!supabase) return NextResponse.json({ error: "Supabase není nastavené." }, { status: 503 });
   let { error } = await supabase.from("solar_telemetry").insert(values);
   if (error && extendedTelemetryFields.some((key) => key in values)) {
     const legacyValues = Object.fromEntries(Object.entries(values).filter(([key]) => !extendedTelemetryFields.includes(key as typeof extendedTelemetryFields[number])));
