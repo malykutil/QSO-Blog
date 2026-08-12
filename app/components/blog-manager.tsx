@@ -148,10 +148,11 @@ export function BlogManager({ initialPosts, initialEditPostId = null }: BlogMana
       });
     };
 
-    const loadMyPosts = async () => {
+    const loadMyPosts = async (userId: string) => {
       const { data, error } = await supabase
         .from("blog_posts")
         .select(blogPostSelectFields)
+        .eq("created_by", userId)
         .order("created_at", { ascending: false });
 
       if (!mounted || error) {
@@ -191,7 +192,7 @@ export function BlogManager({ initialPosts, initialEditPostId = null }: BlogMana
 
       await loadPublicPosts();
       if (loggedIn) {
-        await loadMyPosts();
+        await loadMyPosts(user!.id);
       } else {
         setMyPosts([]);
       }
@@ -207,18 +208,13 @@ export function BlogManager({ initialPosts, initialEditPostId = null }: BlogMana
 
       void loadPublicPosts();
       if (loggedIn) {
-        void loadMyPosts();
+        void loadMyPosts(session!.user.id);
       } else {
         setMyPosts([]);
       }
     });
 
-    const intervalId = window.setInterval(() => {
-      void loadPublicPosts();
-      if (isLoggedIn) {
-        void loadMyPosts();
-      }
-    }, 15000);
+    const intervalId = window.setInterval(() => void syncSession(), 15000);
 
     return () => {
       mounted = false;
@@ -282,19 +278,23 @@ export function BlogManager({ initialPosts, initialEditPostId = null }: BlogMana
       return;
     }
 
+    const { data: { user } } = await supabase.auth.getUser();
     const { data: publicRows } = await supabase
       .from("blog_posts")
       .select(blogPostSelectFields)
       .eq("is_published", true)
       .order("published_at", { ascending: false });
-    const { data: ownerRows } = await supabase
-      .from("blog_posts")
-      .select(blogPostSelectFields)
-      .order("created_at", { ascending: false });
+    const ownerRowsResult = user
+      ? await supabase
+          .from("blog_posts")
+          .select(blogPostSelectFields)
+          .eq("created_by", user.id)
+          .order("created_at", { ascending: false })
+      : { data: [] };
 
     startTransition(() => {
       setPosts(publicRows?.length ? publicRows.map((row) => normalizeBlogPost(row)) : fallbackBlogPosts);
-      setMyPosts((ownerRows ?? []).map((row) => normalizeBlogPost(row)));
+      setMyPosts((ownerRowsResult.data ?? []).map((row) => normalizeBlogPost(row)));
     });
   };
 
