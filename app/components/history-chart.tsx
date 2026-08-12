@@ -268,7 +268,10 @@ export function InteractiveHistoryChart({
     ).filter((gap) => gap > 0).sort((left, right) => left - right);
     const typicalGapMs = positiveGaps.length ? positiveGaps[Math.floor(positiveGaps.length / 2)] : 15000;
     const minimumSpanMs = Math.min(fullRangeSpanMs, Math.max(60000, typicalGapMs * 4));
-    const zoomFactor = Math.exp(event.deltaY * 0.0015);
+    // Trackpady mohou poslat velmi vysoké deltaY. Omezíme jeden krok,
+    // aby odzoomování nikdy nepřeskočilo rovnou z 1 h na celý načtený rozsah.
+    const normalizedDelta = Math.max(-120, Math.min(120, event.deltaY));
+    const zoomFactor = Math.exp(normalizedDelta * 0.001);
     const requestedSpanMs = (pendingZoomRef.current?.spanMs ?? rangeSpanMs) * zoomFactor;
     const nextSpanMs = Math.max(minimumSpanMs, Math.min(fullRangeSpanMs, requestedSpanMs));
     const anchorMs = rangeStartMs + cursorRatio * rangeSpanMs;
