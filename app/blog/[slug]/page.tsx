@@ -67,7 +67,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
 
   return (
     <AppShell>
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <section className="relative overflow-hidden rounded-[2.6rem] border border-slate-900/8 bg-[linear-gradient(135deg,_#0b1421_0%,_#14304b_45%,_#1f5f8f_100%)] px-6 py-8 text-white shadow-[0_24px_80px_rgba(13,27,50,0.18)] md:px-8 md:py-10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_24%,_rgba(255,164,93,0.22),_transparent_18%),radial-gradient(circle_at_left_bottom,_rgba(93,183,255,0.16),_transparent_28%)]" />
           <div className="relative max-w-4xl">
