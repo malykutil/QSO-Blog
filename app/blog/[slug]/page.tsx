@@ -87,7 +87,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
         ) : null}
 
         <section>
-          <article className="glass-panel mx-auto w-full max-w-[50rem] rounded-[2.2rem] p-6 md:p-8">
+          <article className="glass-panel mx-auto w-full max-w-[42rem] rounded-[2.2rem] p-6 md:p-8">
             <div className="space-y-6 text-base leading-8 text-slate-700">
               {paragraphs.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
