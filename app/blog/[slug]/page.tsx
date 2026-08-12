@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/app/components/app-shell";
@@ -87,7 +86,7 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
           </section>
         ) : null}
 
-        <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <section>
           <article className="glass-panel rounded-[2.2rem] p-6 md:p-8">
             <div className="space-y-6 text-base leading-8 text-slate-700">
               {paragraphs.map((paragraph) => (
@@ -110,33 +109,6 @@ export default async function BlogPostPage(props: PageProps<"/blog/[slug]">) {
               </div>
             ) : null}
           </article>
-
-          <aside className="space-y-6">
-            <div className="glass-panel rounded-[2.2rem] p-6">
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Navigace</p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link
-                  href="/blog"
-                  className="rounded-full border border-slate-900/10 px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-                >
-                  Zpět na blog
-                </Link>
-                <Link
-                  href="/mapa"
-                  className="rounded-full border border-slate-900/10 px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
-                >
-                  Mapa spojení
-                </Link>
-              </div>
-            </div>
-
-            <div className="rounded-[2.2rem] border border-slate-900/8 bg-slate-950 p-6 text-white">
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-400">OK2MKJ</p>
-              <p className="mt-4 text-sm leading-7 text-slate-300">
-                Zápisky z provozu, stavby antén a výsledky ze stanice v jednom průběžně doplňovaném archivu.
-              </p>
-            </div>
-          </aside>
         </section>
       </div>
     </AppShell>
