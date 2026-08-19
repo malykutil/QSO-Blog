@@ -1,0 +1,78 @@
+from fastapi.testclient import TestClient
+
+from stock_assistant.agent_league import AgentLeague
+from stock_assistant.config import Settings
+from stock_assistant.dashboard import create_dashboard_app
+from stock_assistant.db import Repository
+
+
+def make_client(tmp_path):
+    settings = Settings(
+        database_path=tmp_path / "paper.db",
+        universe_cache_path=tmp_path / "universe.json",
+        log_path=tmp_path / "assistant.log",
+        agent_initial_cash=10_000,
+    )
+    repository = Repository(
+        settings.database_path,
+        settings.initial_cash,
+        settings.agent_initial_cash,
+    )
+    repository.initialize()
+    return TestClient(create_dashboard_app(repository, settings)), repository, settings
+
+
+def test_czech_dashboard_and_api_are_available(tmp_path):
+    client, _, _ = make_client(tmp_path)
+
+    page = client.get("/")
+    payload = client.get("/api/dashboard")
+    health = client.get("/api/health")
+
+    assert page.status_code == 200
+    assert "Čtyři strategie" in page.text
+    assert payload.status_code == 200
+    assert payload.json()["mode"] == "PAPER"
+    assert len(payload.json()["agents"]) == 4
+    assert health.json() == {"ok": True, "mode": "PAPER"}
+
+
+def test_capital_api_refuses_silent_history_deletion(tmp_path, snapshot):
+    client, repository, settings = make_client(tmp_path)
+    AgentLeague(repository, settings).process({snapshot.ticker: snapshot})
+    agent_id = int(repository.get_agent_accounts()[0]["id"])
+
+    rejected = client.put(
+        f"/api/agents/{agent_id}/capital",
+        json={"capital": 20_000, "reset_history": False},
+    )
+    accepted = client.put(
+        f"/api/agents/{agent_id}/capital",
+        json={"capital": 20_000, "reset_history": True},
+    )
+
+    assert rejected.status_code == 409
+    assert accepted.status_code == 200
+    assert accepted.json()["agent"]["equity"] == 20_000
+
+
+def test_remote_dashboard_requires_bearer_token(tmp_path):
+    settings = Settings(
+        database_path=tmp_path / "paper.db",
+        universe_cache_path=tmp_path / "universe.json",
+        log_path=tmp_path / "assistant.log",
+        dashboard_host="0.0.0.0",
+        dashboard_api_token="secret-token-that-is-at-least-32-chars",
+    )
+    repository = Repository(settings.database_path, settings.initial_cash)
+    repository.initialize()
+    client = TestClient(create_dashboard_app(repository, settings))
+
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/dashboard").status_code == 401
+    response = client.get(
+        "/api/dashboard",
+        headers={"Authorization": f"Bearer {settings.dashboard_api_token}"},
+    )
+    assert response.status_code == 200
+    assert len(response.json()["agents"]) == 4

@@ -1,5 +1,30 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Soukromý AI Stock PAPER dashboard
+
+Po přihlášení účtem nastaveným v `TRADING_ADMIN_EMAIL` se v levém menu zobrazí
+`AI Trading`. Výchozí povolený účet je `malykutil06@gmail.com`; současně musí být
+vedený v Supabase tabulce `app_owners`. Ostatní uživatelé jsou odmítnutí v proxy i
+na serverových API routech.
+
+Trading engine je v `services/stock-assistant` a podporuje pouze PAPER režim.
+`render.yaml` připravuje samostatnou stále běžící Docker službu s persistentním
+SQLite diskem. Veřejné API této služby vyžaduje Bearer token; bez tokenu lze volat
+jen minimální healthcheck.
+
+V prostředí webu na Vercelu nastavte:
+
+```text
+TRADING_ADMIN_EMAIL=malykutil06@gmail.com
+TRADING_ASSISTANT_URL=https://adresa-trading-sluzby.example
+TRADING_ASSISTANT_API_TOKEN=stejny-nahodny-token-jako-v-trading-sluzbe
+```
+
+Hodnota `TRADING_ASSISTANT_API_TOKEN` musí mít alespoň 32 znaků a nesmí být uložená
+do GitHubu. Render Blueprint vyžaduje stejnou hodnotu v `DASHBOARD_API_TOKEN`.
+Plán `starter` a persistentní disk jsou záměrně placená always-on varianta; bez
+persistentního disku by se PAPER historie při restartu ztratila.
+
 ## Getting Started
 
 First, run the development server:

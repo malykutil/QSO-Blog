@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-stock-trading-assistant"
+version = "0.1.0"
+description = "Fail-closed AI stock screening and paper-trading assistant"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "APScheduler>=3.10,<4",
+  "feedparser>=6.0,<7",
+  "fastapi>=0.115,<1",
+  "httpx>=0.27,<1",
+  "lxml>=5.3,<7",
+  "openai>=2.20,<3",
+  "pandas>=2.2,<4",
+  "pandas-market-calendars>=5.0,<6",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "requests>=2.32,<3",
+  "tenacity>=9.0,<10",
+  "uvicorn>=0.34,<1",
+  "yfinance>=0.2.54,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyinstaller>=6.11,<7",
+  "pytest>=8.3,<10",
+  "pytest-cov>=6.0,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+stock-assistant = "stock_assistant.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stock_assistant"]
+
+[tool.pytest.ini_options]
+addopts = "-q --disable-warnings --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

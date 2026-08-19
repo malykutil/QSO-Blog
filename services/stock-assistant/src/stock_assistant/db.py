@@ -1,0 +1,948 @@
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+
+from stock_assistant.models import Action, NewsArticle, Position, TradeAnalysis, TradeExecution
+
+DEFAULT_AGENTS = (
+    ("trend", "Trend", "TREND"),
+    ("breakout", "Breakout", "BREAKOUT"),
+    ("momentum", "Momentum", "MOMENTUM"),
+    ("hybrid", "Hybrid", "HYBRID"),
+)
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS account (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    initial_cash REAL NOT NULL CHECK (initial_cash > 0),
+    cash REAL NOT NULL CHECK (cash >= 0),
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS positions (
+    ticker TEXT PRIMARY KEY,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    entry_price REAL NOT NULL CHECK (entry_price > 0),
+    stop_loss REAL NOT NULL CHECK (stop_loss > 0),
+    target_1 REAL NOT NULL CHECK (target_1 > 0),
+    target_2 REAL NOT NULL CHECK (target_2 > 0),
+    opened_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    price REAL NOT NULL CHECK (price > 0),
+    realized_pnl REAL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('BUY', 'WATCH', 'HOLD', 'SELL')),
+    confidence REAL NOT NULL,
+    current_price REAL NOT NULL CHECK (current_price > 0),
+    payload_json TEXT NOT NULL,
+    executed INTEGER NOT NULL DEFAULT 0 CHECK (executed IN (0, 1)),
+    rejection_reason TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('BUY', 'SELL')),
+    price REAL NOT NULL CHECK (price > 0),
+    stop_loss REAL,
+    target_1 REAL,
+    fingerprint TEXT NOT NULL,
+    sent_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_ticker_sent ON alerts(ticker, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_signals_ticker_created ON signals(ticker, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS position_updates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    price REAL NOT NULL CHECK (price > 0),
+    unrealized_pnl REAL NOT NULL,
+    pnl_percent REAL NOT NULL,
+    source_timestamp TEXT NOT NULL,
+    sent_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_position_updates_ticker_sent
+    ON position_updates(ticker, sent_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cycle_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL,
+    universe_count INTEGER NOT NULL DEFAULT 0,
+    valid_count INTEGER NOT NULL DEFAULT 0,
+    screened_count INTEGER NOT NULL DEFAULT 0,
+    llm_count INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS news_articles (
+    fingerprint TEXT PRIMARY KEY,
+    ticker TEXT,
+    query TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    significance_score INTEGER NOT NULL CHECK (significance_score BETWEEN 0 AND 10),
+    sentiment TEXT NOT NULL CHECK (sentiment IN ('POSITIVE', 'NEGATIVE', 'NEUTRAL')),
+    discovered_at TEXT NOT NULL,
+    alerted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_published ON news_articles(published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_ticker_published
+    ON news_articles(ticker, published_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    strategy TEXT NOT NULL CHECK (strategy IN ('TREND', 'BREAKOUT', 'MOMENTUM', 'HYBRID')),
+    initial_cash REAL NOT NULL CHECK (initial_cash > 0),
+    cash REAL NOT NULL CHECK (cash >= 0),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS market_quotes (
+    ticker TEXT PRIMARY KEY,
+    price REAL NOT NULL CHECK (price > 0),
+    source_timestamp TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_positions (
+    agent_id INTEGER NOT NULL REFERENCES agent_accounts(id) ON DELETE CASCADE,
+    ticker TEXT NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    entry_price REAL NOT NULL CHECK (entry_price > 0),
+    stop_loss REAL NOT NULL CHECK (stop_loss > 0),
+    target_1 REAL NOT NULL CHECK (target_1 > 0),
+    target_2 REAL NOT NULL CHECK (target_2 > 0),
+    scanner_score REAL NOT NULL CHECK (scanner_score BETWEEN 0 AND 100),
+    opened_at TEXT NOT NULL,
+    PRIMARY KEY (agent_id, ticker)
+);
+
+CREATE TABLE IF NOT EXISTS agent_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id INTEGER NOT NULL REFERENCES agent_accounts(id) ON DELETE CASCADE,
+    ticker TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    price REAL NOT NULL CHECK (price > 0),
+    stop_loss REAL,
+    target_1 REAL,
+    target_2 REAL,
+    scanner_score REAL,
+    realized_pnl REAL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_trades_agent_created
+    ON agent_trades(agent_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_equity_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id INTEGER NOT NULL REFERENCES agent_accounts(id) ON DELETE CASCADE,
+    equity REAL NOT NULL CHECK (equity >= 0),
+    cash REAL NOT NULL CHECK (cash >= 0),
+    unrealized_pnl REAL NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_equity_agent_recorded
+    ON agent_equity_snapshots(agent_id, recorded_at DESC);
+"""
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+class Repository:
+    def __init__(
+        self,
+        path: Path,
+        initial_cash: float,
+        agent_initial_cash: float = 10_000.0,
+    ) -> None:
+        self.path = path
+        self.initial_cash = initial_cash
+        self.agent_initial_cash = agent_initial_cash
+
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        connection = sqlite3.connect(self.path, timeout=30)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.connect() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.executescript(SCHEMA)
+            connection.execute(
+                """INSERT OR IGNORE INTO account(id, initial_cash, cash, updated_at)
+                   VALUES (1, ?, ?, ?)""",
+                (self.initial_cash, self.initial_cash, _utc_now()),
+            )
+            now = _utc_now()
+            connection.executemany(
+                """INSERT OR IGNORE INTO agent_accounts
+                   (slug, name, strategy, initial_cash, cash, enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+                [
+                    (
+                        slug,
+                        name,
+                        strategy,
+                        self.agent_initial_cash,
+                        self.agent_initial_cash,
+                        now,
+                        now,
+                    )
+                    for slug, name, strategy in DEFAULT_AGENTS
+                ],
+            )
+            connection.execute("PRAGMA optimize")
+            connection.commit()
+
+    def healthcheck(self) -> bool:
+        try:
+            with self.connect() as connection:
+                return connection.execute("SELECT 1").fetchone()[0] == 1
+        except sqlite3.Error:
+            return False
+
+    def get_cash(self) -> float:
+        with self.connect() as connection:
+            row = connection.execute("SELECT cash FROM account WHERE id = 1").fetchone()
+        if row is None:
+            raise RuntimeError("paper account is not initialized")
+        return float(row["cash"])
+
+    def get_positions(self) -> dict[str, Position]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT * FROM positions ORDER BY ticker").fetchall()
+        return {
+            row["ticker"]: Position(
+                ticker=row["ticker"],
+                quantity=row["quantity"],
+                entry_price=row["entry_price"],
+                stop_loss=row["stop_loss"],
+                target_1=row["target_1"],
+                target_2=row["target_2"],
+                opened_at=datetime.fromisoformat(row["opened_at"]),
+            )
+            for row in rows
+        }
+
+    def open_position(
+        self,
+        *,
+        ticker: str,
+        quantity: int,
+        price: float,
+        stop_loss: float,
+        target_1: float,
+        target_2: float,
+        reason: str,
+    ) -> TradeExecution:
+        now = datetime.now(UTC)
+        cost = quantity * price
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            account = connection.execute("SELECT cash FROM account WHERE id = 1").fetchone()
+            if account is None or float(account["cash"]) + 1e-9 < cost:
+                connection.rollback()
+                raise ValueError("insufficient paper cash")
+            if connection.execute(
+                "SELECT 1 FROM positions WHERE ticker = ?", (ticker,)
+            ).fetchone():
+                connection.rollback()
+                raise ValueError(f"position {ticker} already exists")
+            connection.execute(
+                """INSERT INTO positions
+                   (ticker, quantity, entry_price, stop_loss, target_1, target_2, opened_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (ticker, quantity, price, stop_loss, target_1, target_2, now.isoformat()),
+            )
+            connection.execute(
+                "UPDATE account SET cash = cash - ?, updated_at = ? WHERE id = 1",
+                (cost, now.isoformat()),
+            )
+            connection.execute(
+                """INSERT INTO trades
+                   (ticker, side, quantity, price, realized_pnl, reason, created_at)
+                   VALUES (?, 'BUY', ?, ?, NULL, ?, ?)""",
+                (ticker, quantity, price, reason, now.isoformat()),
+            )
+            connection.commit()
+        return TradeExecution(
+            ticker=ticker,
+            side="BUY",
+            quantity=quantity,
+            price=price,
+            reason=reason,
+            executed_at=now,
+        )
+
+    def close_position(self, ticker: str, price: float, reason: str) -> TradeExecution:
+        now = datetime.now(UTC)
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM positions WHERE ticker = ?", (ticker,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise ValueError(f"no open position for {ticker}")
+            quantity = int(row["quantity"])
+            pnl = (price - float(row["entry_price"])) * quantity
+            connection.execute("DELETE FROM positions WHERE ticker = ?", (ticker,))
+            connection.execute(
+                "UPDATE account SET cash = cash + ?, updated_at = ? WHERE id = 1",
+                (quantity * price, now.isoformat()),
+            )
+            connection.execute(
+                """INSERT INTO trades
+                   (ticker, side, quantity, price, realized_pnl, reason, created_at)
+                   VALUES (?, 'SELL', ?, ?, ?, ?, ?)""",
+                (ticker, quantity, price, pnl, reason, now.isoformat()),
+            )
+            connection.commit()
+        return TradeExecution(
+            ticker=ticker,
+            side="SELL",
+            quantity=quantity,
+            price=price,
+            realized_pnl=pnl,
+            reason=reason,
+            executed_at=now,
+        )
+
+    def save_signal(
+        self,
+        analysis: TradeAnalysis,
+        current_price: float,
+        *,
+        executed: bool,
+        rejection_reason: str | None = None,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO signals
+                   (ticker, action, confidence, current_price, payload_json, executed,
+                    rejection_reason, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    analysis.ticker,
+                    analysis.action.value,
+                    analysis.confidence,
+                    current_price,
+                    analysis.model_dump_json(),
+                    int(executed),
+                    rejection_reason,
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+
+    def last_alert(self, ticker: str) -> sqlite3.Row | None:
+        with self.connect() as connection:
+            return connection.execute(
+                "SELECT * FROM alerts WHERE ticker = ? ORDER BY id DESC LIMIT 1", (ticker,)
+            ).fetchone()
+
+    def record_alert(
+        self,
+        ticker: str,
+        action: Action,
+        price: float,
+        stop_loss: float | None,
+        target_1: float | None,
+        fingerprint: str,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO alerts
+                   (ticker, action, price, stop_loss, target_1, fingerprint, sent_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (ticker, action.value, price, stop_loss, target_1, fingerprint, _utc_now()),
+            )
+            connection.commit()
+
+    def last_position_update(self, ticker: str) -> sqlite3.Row | None:
+        with self.connect() as connection:
+            return connection.execute(
+                """SELECT * FROM position_updates
+                   WHERE ticker = ? ORDER BY id DESC LIMIT 1""",
+                (ticker,),
+            ).fetchone()
+
+    def record_position_update(
+        self,
+        *,
+        ticker: str,
+        price: float,
+        unrealized_pnl: float,
+        pnl_percent: float,
+        source_timestamp: datetime,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO position_updates
+                   (ticker, price, unrealized_pnl, pnl_percent, source_timestamp, sent_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    ticker,
+                    price,
+                    unrealized_pnl,
+                    pnl_percent,
+                    source_timestamp.isoformat(),
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+
+    def get_state(self, key: str) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM app_state WHERE key = ?", (key,)
+            ).fetchone()
+        return str(row["value"]) if row is not None else None
+
+    def set_state(self, key: str, value: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO app_state(key, value, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET
+                       value = excluded.value,
+                       updated_at = excluded.updated_at""",
+                (key, value, _utc_now()),
+            )
+            connection.commit()
+
+    def save_news_article(self, article: NewsArticle) -> bool:
+        """Persist an article once and return whether it was newly discovered."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO news_articles
+                   (fingerprint, ticker, query, title, url, source, published_at,
+                    significance_score, sentiment, discovered_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    article.fingerprint,
+                    article.ticker,
+                    article.query,
+                    article.title,
+                    article.url,
+                    article.source,
+                    article.published_at.isoformat(),
+                    article.significance_score,
+                    article.sentiment,
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+            return cursor.rowcount == 1
+
+    def mark_news_alerted(self, fingerprint: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE news_articles SET alerted_at = ? WHERE fingerprint = ?",
+                (_utc_now(), fingerprint),
+            )
+            connection.commit()
+
+    def pending_news(
+        self,
+        *,
+        minimum_score: int,
+        since: datetime,
+        limit: int,
+    ) -> list[NewsArticle]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT fingerprint, ticker, query, title, url, source, published_at,
+                          significance_score, sentiment
+                   FROM news_articles
+                   WHERE alerted_at IS NULL AND significance_score >= ? AND published_at >= ?
+                   ORDER BY published_at DESC LIMIT ?""",
+                (minimum_score, since.isoformat(), limit),
+            ).fetchall()
+        return [
+            NewsArticle(
+                fingerprint=row["fingerprint"],
+                ticker=row["ticker"],
+                query=row["query"],
+                title=row["title"],
+                url=row["url"],
+                source=row["source"],
+                published_at=datetime.fromisoformat(row["published_at"]),
+                significance_score=row["significance_score"],
+                sentiment=row["sentiment"],
+            )
+            for row in rows
+        ]
+
+    def recent_news(
+        self,
+        *,
+        ticker: str | None = None,
+        limit: int = 10,
+        since: datetime | None = None,
+    ) -> list[NewsArticle]:
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if ticker is not None:
+            clauses.append("ticker = ?")
+            parameters.append(ticker.upper())
+        if since is not None:
+            clauses.append("published_at >= ?")
+            parameters.append(since.isoformat())
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        parameters.append(limit)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""SELECT fingerprint, ticker, query, title, url, source, published_at,
+                           significance_score, sentiment
+                    FROM news_articles {where}
+                    ORDER BY published_at DESC LIMIT ?""",
+                parameters,
+            ).fetchall()
+        return [
+            NewsArticle(
+                fingerprint=row["fingerprint"],
+                ticker=row["ticker"],
+                query=row["query"],
+                title=row["title"],
+                url=row["url"],
+                source=row["source"],
+                published_at=datetime.fromisoformat(row["published_at"]),
+                significance_score=row["significance_score"],
+                sentiment=row["sentiment"],
+            )
+            for row in rows
+        ]
+
+    def start_cycle(self) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO cycle_runs(started_at, status) VALUES (?, 'RUNNING')", (_utc_now(),)
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
+    def finish_cycle(
+        self,
+        cycle_id: int,
+        *,
+        status: str,
+        universe_count: int = 0,
+        valid_count: int = 0,
+        screened_count: int = 0,
+        llm_count: int = 0,
+        error: str | None = None,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE cycle_runs
+                   SET finished_at = ?, status = ?, universe_count = ?, valid_count = ?,
+                       screened_count = ?, llm_count = ?, error = ?
+                   WHERE id = ?""",
+                (
+                    _utc_now(),
+                    status,
+                    universe_count,
+                    valid_count,
+                    screened_count,
+                    llm_count,
+                    error,
+                    cycle_id,
+                ),
+            )
+            connection.commit()
+
+    def dump_account(self) -> dict[str, object]:
+        with self.connect() as connection:
+            account = dict(connection.execute("SELECT * FROM account WHERE id = 1").fetchone())
+            trades = [dict(row) for row in connection.execute(
+                "SELECT * FROM trades ORDER BY id DESC LIMIT 20"
+            )]
+        return {"account": account, "positions": self.get_positions(), "recent_trades": trades}
+
+    def save_market_quotes(self, snapshots: dict[str, object]) -> None:
+        rows = [
+            (
+                ticker,
+                float(snapshot.current_price),
+                snapshot.timestamp.isoformat(),
+                _utc_now(),
+            )
+            for ticker, snapshot in snapshots.items()
+        ]
+        if not rows:
+            return
+        with self.connect() as connection:
+            connection.executemany(
+                """INSERT INTO market_quotes(ticker, price, source_timestamp, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(ticker) DO UPDATE SET
+                       price = excluded.price,
+                       source_timestamp = excluded.source_timestamp,
+                       updated_at = excluded.updated_at""",
+                rows,
+            )
+            connection.commit()
+
+    def get_agent_accounts(self) -> list[dict[str, object]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM agent_accounts ORDER BY id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_agent_positions(self, agent_id: int) -> list[dict[str, object]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price,
+                          q.source_timestamp
+                   FROM agent_positions p
+                   LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                   WHERE p.agent_id = ? ORDER BY p.ticker""",
+                (agent_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def agent_runtime_state(self, agent_id: int) -> dict[str, object]:
+        with self.connect() as connection:
+            account_row = connection.execute(
+                "SELECT * FROM agent_accounts WHERE id = ?", (agent_id,)
+            ).fetchone()
+            if account_row is None:
+                raise ValueError("agent neexistuje")
+            positions = connection.execute(
+                """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price
+                   FROM agent_positions p
+                   LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                   WHERE p.agent_id = ?""",
+                (agent_id,),
+            ).fetchall()
+        market_value = sum(float(row["current_price"]) * int(row["quantity"]) for row in positions)
+        unrealized = sum(
+            (float(row["current_price"]) - float(row["entry_price"])) * int(row["quantity"])
+            for row in positions
+        )
+        portfolio_risk = sum(
+            max(float(row["entry_price"]) - float(row["stop_loss"]), 0)
+            * int(row["quantity"])
+            for row in positions
+        )
+        account = dict(account_row)
+        account.update(
+            {
+                "positions": [dict(row) for row in positions],
+                "market_value": market_value,
+                "unrealized_pnl": unrealized,
+                "equity": float(account_row["cash"]) + market_value,
+                "portfolio_risk": portfolio_risk,
+            }
+        )
+        return account
+
+    def agent_open_position(
+        self,
+        *,
+        agent_id: int,
+        ticker: str,
+        quantity: int,
+        price: float,
+        stop_loss: float,
+        target_1: float,
+        target_2: float,
+        scanner_score: float,
+        reason: str,
+    ) -> None:
+        if not (quantity > 0 and 0 < stop_loss < price < target_1 <= target_2):
+            raise ValueError("neplatné úrovně agentní PAPER pozice")
+        now = _utc_now()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            account = connection.execute(
+                "SELECT cash, strategy, enabled FROM agent_accounts WHERE id = ?",
+                (agent_id,),
+            ).fetchone()
+            cost = quantity * price
+            if account is None or not account["enabled"]:
+                connection.rollback()
+                raise ValueError("agent není aktivní")
+            if float(account["cash"]) + 1e-9 < cost:
+                connection.rollback()
+                raise ValueError("agent nemá dostatek PAPER hotovosti")
+            if connection.execute(
+                "SELECT 1 FROM agent_positions WHERE agent_id = ? AND ticker = ?",
+                (agent_id, ticker),
+            ).fetchone():
+                connection.rollback()
+                raise ValueError("agent už tuto pozici drží")
+            connection.execute(
+                """INSERT INTO agent_positions
+                   (agent_id, ticker, quantity, entry_price, stop_loss, target_1, target_2,
+                    scanner_score, opened_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    agent_id,
+                    ticker,
+                    quantity,
+                    price,
+                    stop_loss,
+                    target_1,
+                    target_2,
+                    scanner_score,
+                    now,
+                ),
+            )
+            connection.execute(
+                "UPDATE agent_accounts SET cash = cash - ?, updated_at = ? WHERE id = ?",
+                (cost, now, agent_id),
+            )
+            connection.execute(
+                """INSERT INTO agent_trades
+                   (agent_id, ticker, strategy, side, quantity, price, stop_loss, target_1,
+                    target_2, scanner_score, realized_pnl, reason, created_at)
+                   VALUES (?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
+                (
+                    agent_id,
+                    ticker,
+                    account["strategy"],
+                    quantity,
+                    price,
+                    stop_loss,
+                    target_1,
+                    target_2,
+                    scanner_score,
+                    reason,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def agent_close_position(
+        self,
+        *,
+        agent_id: int,
+        ticker: str,
+        price: float,
+        reason: str,
+    ) -> float:
+        now = _utc_now()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            position = connection.execute(
+                """SELECT p.*, a.strategy FROM agent_positions p
+                   JOIN agent_accounts a ON a.id = p.agent_id
+                   WHERE p.agent_id = ? AND p.ticker = ?""",
+                (agent_id, ticker),
+            ).fetchone()
+            if position is None:
+                connection.rollback()
+                raise ValueError("agentní pozice neexistuje")
+            quantity = int(position["quantity"])
+            realized_pnl = (price - float(position["entry_price"])) * quantity
+            connection.execute(
+                "DELETE FROM agent_positions WHERE agent_id = ? AND ticker = ?",
+                (agent_id, ticker),
+            )
+            connection.execute(
+                "UPDATE agent_accounts SET cash = cash + ?, updated_at = ? WHERE id = ?",
+                (price * quantity, now, agent_id),
+            )
+            connection.execute(
+                """INSERT INTO agent_trades
+                   (agent_id, ticker, strategy, side, quantity, price, stop_loss, target_1,
+                    target_2, scanner_score, realized_pnl, reason, created_at)
+                   VALUES (?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    agent_id,
+                    ticker,
+                    position["strategy"],
+                    quantity,
+                    price,
+                    position["stop_loss"],
+                    position["target_1"],
+                    position["target_2"],
+                    position["scanner_score"],
+                    realized_pnl,
+                    reason,
+                    now,
+                ),
+            )
+            connection.commit()
+        return realized_pnl
+
+    def record_agent_equity(self, agent_id: int) -> None:
+        state = self.agent_runtime_state(agent_id)
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO agent_equity_snapshots
+                   (agent_id, equity, cash, unrealized_pnl, recorded_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    agent_id,
+                    state["equity"],
+                    state["cash"],
+                    state["unrealized_pnl"],
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+
+    def reset_agent_capital(
+        self,
+        agent_id: int,
+        capital: float,
+        *,
+        reset_history: bool,
+    ) -> None:
+        if not (capital > 0 and capital <= 1_000_000_000):
+            raise ValueError("kapitál musí být mezi 0 a 1 miliardou USD")
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            exists = connection.execute(
+                "SELECT 1 FROM agent_accounts WHERE id = ?", (agent_id,)
+            ).fetchone()
+            if exists is None:
+                connection.rollback()
+                raise ValueError("agent neexistuje")
+            activity = connection.execute(
+                """SELECT
+                       EXISTS(SELECT 1 FROM agent_positions WHERE agent_id = ?) OR
+                       EXISTS(SELECT 1 FROM agent_trades WHERE agent_id = ?) OR
+                       EXISTS(
+                           SELECT 1 FROM agent_equity_snapshots WHERE agent_id = ?
+                       ) AS has_activity""",
+                (agent_id, agent_id, agent_id),
+            ).fetchone()["has_activity"]
+            if activity and not reset_history:
+                connection.rollback()
+                raise ValueError("agent má historii nebo pozice; potvrďte reset portfolia")
+            if reset_history:
+                connection.execute("DELETE FROM agent_positions WHERE agent_id = ?", (agent_id,))
+                connection.execute("DELETE FROM agent_trades WHERE agent_id = ?", (agent_id,))
+                connection.execute(
+                    "DELETE FROM agent_equity_snapshots WHERE agent_id = ?", (agent_id,)
+                )
+            connection.execute(
+                """UPDATE agent_accounts
+                   SET initial_cash = ?, cash = ?, updated_at = ? WHERE id = ?""",
+                (capital, capital, _utc_now(), agent_id),
+            )
+            connection.commit()
+
+    def agent_dashboard(self) -> list[dict[str, object]]:
+        dashboard: list[dict[str, object]] = []
+        with self.connect() as connection:
+            accounts = connection.execute("SELECT * FROM agent_accounts ORDER BY id").fetchall()
+            for account_row in accounts:
+                agent_id = int(account_row["id"])
+                positions = connection.execute(
+                    """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price
+                       FROM agent_positions p
+                       LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                       WHERE p.agent_id = ? ORDER BY p.ticker""",
+                    (agent_id,),
+                ).fetchall()
+                closed = connection.execute(
+                    """SELECT realized_pnl FROM agent_trades
+                       WHERE agent_id = ? AND side = 'SELL' ORDER BY id""",
+                    (agent_id,),
+                ).fetchall()
+                equity_rows = connection.execute(
+                    """SELECT equity, recorded_at FROM agent_equity_snapshots
+                       WHERE agent_id = ? ORDER BY id""",
+                    (agent_id,),
+                ).fetchall()
+                recent_trades = connection.execute(
+                    """SELECT ticker, side, quantity, price, realized_pnl, reason, created_at
+                       FROM agent_trades WHERE agent_id = ? ORDER BY id DESC LIMIT 10""",
+                    (agent_id,),
+                ).fetchall()
+                market_value = sum(
+                    float(row["current_price"]) * int(row["quantity"]) for row in positions
+                )
+                unrealized = sum(
+                    (float(row["current_price"]) - float(row["entry_price"]))
+                    * int(row["quantity"])
+                    for row in positions
+                )
+                equity = float(account_row["cash"]) + market_value
+                initial_cash = float(account_row["initial_cash"])
+                pnl_values = [float(row["realized_pnl"]) for row in closed]
+                wins = [value for value in pnl_values if value > 0]
+                losses = [value for value in pnl_values if value < 0]
+                peak = 0.0
+                max_drawdown = 0.0
+                curve = []
+                for row in equity_rows:
+                    value = float(row["equity"])
+                    peak = max(peak, value)
+                    if peak > 0:
+                        max_drawdown = min(max_drawdown, value / peak - 1)
+                    curve.append({"equity": value, "time": row["recorded_at"]})
+                dashboard.append(
+                    {
+                        **dict(account_row),
+                        "equity": equity,
+                        "market_value": market_value,
+                        "unrealized_pnl": unrealized,
+                        "total_return_percent": (equity / initial_cash - 1) * 100,
+                        "realized_pnl": sum(pnl_values),
+                        "open_positions": [dict(row) for row in positions],
+                        "closed_trades": len(pnl_values),
+                        "win_rate": (len(wins) / len(pnl_values) * 100) if pnl_values else 0.0,
+                        "profit_factor": (
+                            sum(wins) / abs(sum(losses))
+                            if losses
+                            else (None if not wins else 999.0)
+                        ),
+                        "max_drawdown_percent": max_drawdown * 100,
+                        "equity_curve": curve[-200:],
+                        "recent_trades": [dict(row) for row in recent_trades],
+                    }
+                )
+        return dashboard

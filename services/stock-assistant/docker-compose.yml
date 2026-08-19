@@ -1,0 +1,21 @@
+services:
+  stock-assistant:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/data/stock_assistant.db
+      UNIVERSE_CACHE_PATH: /app/data/universe.json
+    volumes:
+      - stock-assistant-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-m", "stock_assistant", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+
+volumes:
+  stock-assistant-data:

@@ -5,8 +5,9 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 import { isSupabaseConfigured } from "@/src/lib/supabase";
 import { getSolarControlCookieValue, SOLAR_CONTROL_COOKIE } from "@/src/lib/solar-auth";
 
-const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
+const privatePaths = ["/dashboard", "/settings", "/bezpecnost", "/trading"];
 const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
+const tradingAdminEmail = (process.env.TRADING_ADMIN_EMAIL || "malykutil06@gmail.com").trim().toLowerCase();
 
 function isPrivatePath(pathname: string) {
   return privatePaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -14,6 +15,10 @@ function isPrivatePath(pathname: string) {
 
 function isSecurityPath(pathname: string) {
   return pathname === "/bezpecnost" || pathname.startsWith("/bezpecnost/");
+}
+
+function isTradingPath(pathname: string) {
+  return pathname === "/trading" || pathname.startsWith("/trading/");
 }
 
 function isSafeNextPath(pathnameWithQuery: string) {
@@ -215,6 +220,12 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
       redirect.headers.set("Cache-Control", "no-store, max-age=0");
       return redirect;
     }
+  }
+
+  if (isTradingPath(pathname) && user?.email?.trim().toLowerCase() !== tradingAdminEmail) {
+    const redirect = NextResponse.redirect(new URL("/dashboard", request.url));
+    redirect.headers.set("Cache-Control", "no-store, max-age=0");
+    return redirect;
   }
 
   if (isLoginPath && (user || hasSolarControl)) {

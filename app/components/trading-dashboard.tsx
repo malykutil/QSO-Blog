@@ -1,0 +1,305 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import type { TradingAgent, TradingDashboardPayload } from "@/src/lib/trading-types";
+
+const money = new Intl.NumberFormat("cs-CZ", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const decimal = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 });
+const accents = ["#22c55e", "#0ea5e9", "#f59e0b", "#8b5cf6"];
+
+function signedPercent(value: number) {
+  return `${value >= 0 ? "+" : ""}${decimal.format(value)} %`;
+}
+
+function valueTone(value: number) {
+  if (value > 0) return "text-emerald-600 dark:text-emerald-400";
+  if (value < 0) return "text-rose-600 dark:text-rose-400";
+  return "text-slate-500";
+}
+
+function EquityChart({ agent }: { agent: TradingAgent }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const draw = () => {
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(canvas.getBoundingClientRect().width, 320);
+      const height = 250;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+
+      const points = agent.equity_curve.length
+        ? agent.equity_curve.map((point) => point.equity)
+        : [agent.initial_cash, agent.equity];
+      const lowest = Math.min(...points) * 0.995;
+      const highest = Math.max(...points) * 1.005;
+      const span = Math.max(highest - lowest, 1);
+      const padding = 18;
+
+      context.strokeStyle = "rgba(100, 116, 139, 0.18)";
+      context.lineWidth = 1;
+      for (let index = 0; index < 5; index += 1) {
+        const y = padding + ((height - padding * 2) * index) / 4;
+        context.beginPath();
+        context.moveTo(0, y);
+        context.lineTo(width, y);
+        context.stroke();
+      }
+
+      const gradient = context.createLinearGradient(0, 0, width, 0);
+      gradient.addColorStop(0, "#22c55e");
+      gradient.addColorStop(1, "#0ea5e9");
+      context.strokeStyle = gradient;
+      context.lineWidth = 2.5;
+      context.beginPath();
+      points.forEach((point, index) => {
+        const x = padding + ((width - padding * 2) * index) / Math.max(points.length - 1, 1);
+        const y = height - padding - ((point - lowest) / span) * (height - padding * 2);
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      context.stroke();
+    };
+
+    draw();
+    window.addEventListener("resize", draw);
+    return () => window.removeEventListener("resize", draw);
+  }, [agent]);
+
+  return <canvas ref={canvasRef} className="mt-5 h-[250px] w-full" aria-label={`Vývoj equity agenta ${agent.name}`} />;
+}
+
+export function TradingDashboard() {
+  const [data, setData] = useState<TradingDashboardPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
+  const [capitalAgent, setCapitalAgent] = useState<TradingAgent | null>(null);
+  const [capital, setCapital] = useState(10_000);
+  const [resetHistory, setResetHistory] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch("/api/trading/dashboard", { cache: "no-store" });
+      const payload = (await response.json().catch(() => null)) as TradingDashboardPayload & { error?: string };
+      if (!response.ok) throw new Error(payload?.error || "Trading přehled se nepodařilo načíst.");
+      setData(payload);
+      setError(null);
+      setSelectedAgentId((current) => current ?? payload.agents[0]?.id ?? null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Trading přehled není dostupný.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const ranked = useMemo(
+    () => [...(data?.agents ?? [])].sort((left, right) => right.total_return_percent - left.total_return_percent),
+    [data],
+  );
+  const selectedAgent = ranked.find((agent) => agent.id === selectedAgentId) ?? ranked[0] ?? null;
+  const leagueEquity = ranked.reduce((sum, agent) => sum + agent.equity, 0);
+  const openPositions = ranked.reduce((sum, agent) => sum + agent.open_positions.length, 0);
+
+  const openCapital = (agent: TradingAgent) => {
+    setCapitalAgent(agent);
+    setCapital(agent.initial_cash);
+    setResetHistory(Boolean(agent.open_positions.length || agent.closed_trades || agent.equity_curve.length));
+  };
+
+  const saveCapital = async () => {
+    if (!capitalAgent) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/trading/agents/${capitalAgent.id}/capital`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capital, reset_history: resetHistory }),
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || "Kapitál se nepodařilo uložit.");
+      setCapitalAgent(null);
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Kapitál se nepodařilo uložit.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto flex w-full max-w-[92rem] flex-col gap-6">
+      <section className="overflow-hidden rounded-[2rem] border border-slate-900/10 bg-slate-950 p-7 text-white shadow-[0_28px_90px_rgba(15,23,42,0.22)] lg:p-9">
+        <div className="flex flex-col justify-between gap-7 xl:flex-row xl:items-end">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_18px_#4ade80]" />
+              PAPER ONLY · soukromý admin přehled
+            </div>
+            <h1 className="mt-4 font-display text-4xl leading-tight sm:text-6xl">AI Trading League</h1>
+            <p className="mt-4 max-w-2xl leading-7 text-slate-300">
+              Čtyři oddělené strategie nad stejnými validovanými tržními daty. Žádný účet nemůže zadat obchod se skutečnými penězi.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
+              <p className="text-xs text-slate-400">Equity ligy</p>
+              <p className="mt-2 text-2xl font-semibold">{money.format(leagueEquity)}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
+              <p className="text-xs text-slate-400">Nejlepší agent</p>
+              <p className="mt-2 text-2xl font-semibold">{ranked[0]?.name ?? "—"}</p>
+            </div>
+            <div className="col-span-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 sm:col-span-1">
+              <p className="text-xs text-slate-400">Otevřené pozice</p>
+              <p className="mt-2 text-2xl font-semibold">{openPositions}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <div className="flex flex-col gap-3 rounded-[1.5rem] border border-rose-300/40 bg-rose-50 px-5 py-4 text-rose-950 sm:flex-row sm:items-center sm:justify-between">
+          <p>{error}</p>
+          <button type="button" onClick={() => void load()} className="rounded-xl bg-rose-950 px-4 py-2 text-sm font-semibold text-white">
+            Zkusit znovu
+          </button>
+        </div>
+      ) : null}
+
+      {loading && !data ? (
+        <div className="glass-panel rounded-[2rem] p-10 text-center text-slate-600">Načítám zabezpečená PAPER data…</div>
+      ) : null}
+
+      {data ? (
+        <>
+          <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            {ranked.map((agent, index) => (
+              <article key={agent.id} className="glass-panel relative overflow-hidden rounded-[1.7rem] p-6">
+                <span className="absolute inset-y-0 left-0 w-1" style={{ background: accents[index % accents.length] }} />
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-bold tracking-[0.2em] text-slate-500">{agent.strategy}</p>
+                    <h2 className="mt-1 text-xl font-semibold text-slate-950">{agent.name}</h2>
+                  </div>
+                  <span className="text-sm text-slate-500">#{index + 1}</span>
+                </div>
+                <p className="mt-7 text-3xl font-semibold tracking-tight text-slate-950">{money.format(agent.equity)}</p>
+                <p className={`mt-1 text-sm font-semibold ${valueTone(agent.total_return_percent)}`}>
+                  {signedPercent(agent.total_return_percent)} od startu
+                </p>
+                <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
+                  <div><dt className="text-slate-500">Hotovost</dt><dd className="mt-1 font-semibold text-slate-950">{money.format(agent.cash)}</dd></div>
+                  <div><dt className="text-slate-500">Pozice</dt><dd className="mt-1 font-semibold text-slate-950">{agent.open_positions.length}</dd></div>
+                  <div><dt className="text-slate-500">Win rate</dt><dd className="mt-1 font-semibold text-slate-950">{decimal.format(agent.win_rate)} %</dd></div>
+                  <div><dt className="text-slate-500">Drawdown</dt><dd className="mt-1 font-semibold text-rose-600">{decimal.format(agent.max_drawdown_percent)} %</dd></div>
+                </dl>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setSelectedAgentId(agent.id)} className="rounded-xl border border-slate-900/10 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900">
+                    Detail
+                  </button>
+                  <button type="button" onClick={() => openCapital(agent)} className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white">
+                    Nastavit kapitál
+                  </button>
+                </div>
+              </article>
+            ))}
+          </section>
+
+          {selectedAgent ? (
+            <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+              <div className="glass-panel rounded-[1.8rem] p-6">
+                <div className="flex items-end justify-between gap-4">
+                  <div><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Výkonnost</p><h2 className="mt-2 text-2xl font-semibold text-slate-950">Equity · {selectedAgent.name}</h2></div>
+                  <p className="text-sm text-slate-500">{selectedAgent.closed_trades} uzavřených obchodů</p>
+                </div>
+                <EquityChart agent={selectedAgent} />
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wider text-slate-500"><tr><th className="py-3">#</th><th>Agent</th><th>Equity</th><th>Výnos</th><th>Win rate</th><th>Profit factor</th></tr></thead>
+                    <tbody>
+                      {ranked.map((agent, index) => (
+                        <tr key={agent.id} className="border-t border-slate-900/8"><td className="py-4">#{index + 1}</td><td className="font-semibold">{agent.name}</td><td>{money.format(agent.equity)}</td><td className={valueTone(agent.total_return_percent)}>{signedPercent(agent.total_return_percent)}</td><td>{decimal.format(agent.win_rate)} %</td><td>{agent.profit_factor === null ? "—" : decimal.format(agent.profit_factor)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-[1.8rem] p-6">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Portfolio</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-950">Pozice · {selectedAgent.name}</h2>
+                <div className="mt-5 space-y-3">
+                  {selectedAgent.open_positions.length ? selectedAgent.open_positions.map((position) => {
+                    const pnl = (position.current_price - position.entry_price) * position.quantity;
+                    return (
+                      <article key={position.ticker} className="rounded-2xl border border-slate-900/8 bg-white/80 p-4">
+                        <div className="flex items-center justify-between gap-3"><strong className="text-slate-950">{position.ticker}</strong><span className={`font-semibold ${valueTone(pnl)}`}>{pnl >= 0 ? "+" : ""}{money.format(pnl)}</span></div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{position.quantity} ks · vstup {decimal.format(position.entry_price)} · nyní {decimal.format(position.current_price)}</p>
+                        <p className="text-sm leading-6 text-slate-600">SL {decimal.format(position.stop_loss)} · T1 {decimal.format(position.target_1)} · T2 {decimal.format(position.target_2)}</p>
+                      </article>
+                    );
+                  }) : <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">Agent zatím nemá otevřenou pozici.</p>}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="glass-panel rounded-[1.8rem] p-6">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+              <div><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Internetový dohled</p><h2 className="mt-2 text-2xl font-semibold text-slate-950">Poslední tržní zprávy</h2></div>
+              <p className="text-sm text-slate-500">Aktualizace služby: {new Date(data.server_time).toLocaleString("cs-CZ")}</p>
+            </div>
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              {data.recent_news.length ? data.recent_news.map((article) => (
+                <a key={article.fingerprint} href={article.url} target="_blank" rel="noopener noreferrer" className="rounded-2xl border border-slate-900/8 bg-white/80 p-4 transition hover:-translate-y-0.5 hover:bg-white">
+                  <p className="font-semibold leading-6 text-slate-950">{article.title}</p>
+                  <p className="mt-2 text-xs text-slate-500">{article.ticker || "TRH"} · {article.source} · skóre {article.significance_score}/10</p>
+                </a>
+              )) : <p className="text-slate-500">Zatím nebyly načtené žádné zprávy.</p>}
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {capitalAgent ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="capital-title">
+          <div className="w-full max-w-md rounded-[1.8rem] bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <p className="text-xs uppercase tracking-[0.25em] text-emerald-600">Nastavení PAPER účtu</p>
+            <h2 id="capital-title" className="mt-2 text-2xl font-semibold text-slate-950">Kapitál · {capitalAgent.name}</h2>
+            <label className="mt-6 block text-sm font-semibold text-slate-700">Počáteční kapitál v USD
+              <input type="number" min={100} max={1_000_000_000} step={100} value={capital} onChange={(event) => setCapital(Number(event.target.value))} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3" />
+            </label>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-600">
+              <input type="checkbox" checked={resetHistory} onChange={(event) => setResetHistory(event.target.checked)} className="mt-1" />
+              Resetovat otevřené pozice, obchody a equity křivku. Tuto akci nelze vrátit.
+            </label>
+            <div className="mt-7 flex justify-end gap-3">
+              <button type="button" onClick={() => setCapitalAgent(null)} disabled={saving} className="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700">Zrušit</button>
+              <button type="button" onClick={() => void saveCapital()} disabled={saving || !Number.isFinite(capital)} className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{saving ? "Ukládám…" : "Uložit kapitál"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

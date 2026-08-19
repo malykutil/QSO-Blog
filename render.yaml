@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: qso-ai-stock-paper
+    runtime: docker
+    plan: starter
+    rootDir: services/stock-assistant
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: trading-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: TRADING_MODE
+        value: paper
+      - key: DATABASE_PATH
+        value: /app/data/stock_assistant.db
+      - key: UNIVERSE_CACHE_PATH
+        value: /app/data/universe.json
+      - key: LOG_PATH
+        value: /app/data/assistant.log
+      - key: DASHBOARD_HOST
+        value: 0.0.0.0
+      - key: DASHBOARD_PORT
+        value: 10000
+      - key: DASHBOARD_API_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

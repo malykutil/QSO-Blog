@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Stock PAPER Assistant</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07100d;
+      --panel: rgba(17, 31, 26, .88);
+      --panel-2: #13251e;
+      --line: rgba(167, 243, 208, .14);
+      --text: #edfdf5;
+      --muted: #94ad9f;
+      --green: #4ade80;
+      --green-2: #22c55e;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --cyan: #5eead4;
+      --shadow: 0 22px 55px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(34, 197, 94, .15), transparent 30rem),
+        radial-gradient(circle at 95% 15%, rgba(94, 234, 212, .08), transparent 28rem),
+        var(--bg);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .shell { max-width: 1480px; margin: 0 auto; padding: 28px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .mark {
+      width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center;
+      color: #03210f; font-weight: 900; background: linear-gradient(145deg, #86efac, #22c55e);
+      box-shadow: 0 8px 30px rgba(34, 197, 94, .25);
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 19px; letter-spacing: -.02em; }
+    h2 { font-size: 16px; }
+    .eyebrow { color: var(--green); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 800; }
+    .status { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px var(--green); }
+    .hero {
+      margin: 26px 0 18px; padding: 28px; border: 1px solid var(--line); border-radius: 24px;
+      background: linear-gradient(120deg, rgba(22, 47, 37, .96), rgba(10, 25, 20, .92));
+      box-shadow: var(--shadow); display: grid; grid-template-columns: 1.4fr repeat(3, minmax(140px, .45fr)); gap: 24px;
+    }
+    .hero-copy h2 { font-size: clamp(25px, 3vw, 42px); letter-spacing: -.055em; margin-top: 8px; max-width: 650px; }
+    .hero-copy p { color: var(--muted); margin-top: 11px; max-width: 680px; }
+    .hero-stat { border-left: 1px solid var(--line); padding-left: 22px; align-self: center; }
+    .label { color: var(--muted); font-size: 12px; }
+    .value { font-size: 26px; font-weight: 780; letter-spacing: -.035em; margin-top: 5px; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .section-head { display: flex; justify-content: space-between; align-items: end; margin: 26px 2px 12px; }
+    .section-head p { color: var(--muted); margin-top: 4px; }
+    .agent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card, .panel {
+      border: 1px solid var(--line); border-radius: 19px; background: var(--panel); box-shadow: var(--shadow);
+    }
+    .card { padding: 19px; position: relative; overflow: hidden; }
+    .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent, var(--green)); }
+    .agent-top { display: flex; justify-content: space-between; gap: 12px; }
+    .rank { color: var(--muted); font-size: 12px; }
+    .strategy { color: var(--accent, var(--green)); font-size: 11px; letter-spacing: .12em; font-weight: 800; }
+    .agent-equity { font-size: 27px; font-weight: 780; letter-spacing: -.04em; margin-top: 22px; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+    .metric strong { display: block; margin-top: 2px; font-size: 15px; }
+    .card-actions { display: flex; gap: 8px; }
+    .btn {
+      border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; color: var(--text);
+      background: rgba(255, 255, 255, .04); transition: .18s ease; font-weight: 700;
+    }
+    .btn:hover { border-color: rgba(74, 222, 128, .5); transform: translateY(-1px); }
+    .btn.primary { color: #042111; background: var(--green); border-color: var(--green); }
+    .dashboard-grid { display: grid; grid-template-columns: 1.35fr .65fr; gap: 14px; }
+    .panel { padding: 20px; min-width: 0; }
+    canvas { width: 100%; height: 260px; display: block; margin-top: 15px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 13px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .scroll { overflow-x: auto; }
+    .positions { display: grid; gap: 9px; margin-top: 14px; }
+    .position, .news-item { padding: 13px; background: rgba(255,255,255,.035); border: 1px solid var(--line); border-radius: 13px; }
+    .position-top { display: flex; justify-content: space-between; gap: 10px; font-weight: 750; }
+    .position-meta, .news-meta { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .news-list { display: grid; gap: 9px; margin-top: 14px; max-height: 430px; overflow: auto; }
+    .news-item a { color: var(--text); text-decoration: none; font-weight: 650; }
+    .news-item a:hover { color: var(--green); }
+    .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+    dialog { border: 1px solid var(--line); border-radius: 20px; color: var(--text); background: #102019; box-shadow: var(--shadow); width: min(470px, calc(100% - 32px)); }
+    dialog::backdrop { background: rgba(0, 5, 3, .76); backdrop-filter: blur(5px); }
+    dialog form { display: grid; gap: 16px; }
+    dialog h2 { font-size: 21px; }
+    input[type="number"] { width: 100%; color: var(--text); background: #09150f; border: 1px solid var(--line); border-radius: 11px; padding: 12px; margin-top: 6px; }
+    .check { display: flex; align-items: flex-start; gap: 9px; color: var(--muted); }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; }
+    .toast { position: fixed; right: 24px; bottom: 24px; padding: 13px 16px; border-radius: 12px; background: #193528; border: 1px solid var(--line); box-shadow: var(--shadow); display: none; }
+    @media (max-width: 1100px) { .agent-grid { grid-template-columns: 1fr 1fr; } .hero { grid-template-columns: 1fr 1fr; } .hero-copy { grid-column: 1 / -1; } }
+    @media (max-width: 760px) { .shell { padding: 17px; } header { align-items: flex-start; } .status span:last-child { display: none; } .hero, .dashboard-grid, .agent-grid { grid-template-columns: 1fr; } .hero-stat { border-left: 0; border-top: 1px solid var(--line); padding: 14px 0 0; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand"><div class="mark">AI</div><div><div class="eyebrow">PAPER ONLY</div><h1>Stock Assistant</h1></div></div>
+      <div class="status"><span class="dot"></span><span id="systemStatus">Načítám systém…</span><button class="btn" id="refresh">Obnovit</button></div>
+    </header>
+
+    <section class="hero">
+      <div class="hero-copy"><div class="eyebrow">AI Trading League</div><h2>Čtyři strategie. Oddělené účty. Stejná tržní data.</h2><p>Každý agent obchoduje výhradně simulované peníze, vlastní portfolio a vlastní rizikový rozpočet.</p></div>
+      <div class="hero-stat"><div class="label">Kapitál ligy</div><div class="value" id="leagueCapital">—</div></div>
+      <div class="hero-stat"><div class="label">Nejlepší agent</div><div class="value" id="bestAgent">—</div></div>
+      <div class="hero-stat"><div class="label">Otevřené pozice</div><div class="value" id="openCount">—</div></div>
+    </section>
+
+    <div class="section-head"><div><h2>Modely a jejich portfolia</h2><p>Kapitál lze změnit; u rozběhnutého portfolia je vyžadovaný potvrzený reset historie.</p></div></div>
+    <section class="agent-grid" id="agentGrid"></section>
+
+    <div class="section-head"><div><h2>Výkonnost</h2><p id="chartSubtitle">Equity curve nejlepšího agenta</p></div></div>
+    <section class="dashboard-grid">
+      <div class="panel"><canvas id="equityChart" height="260" aria-label="Vývoj equity"></canvas><div class="scroll"><table><thead><tr><th>Pořadí</th><th>Agent</th><th>Equity</th><th>Výnos</th><th>Win rate</th><th>Drawdown</th><th>Obchody</th></tr></thead><tbody id="leaderboard"></tbody></table></div></div>
+      <div class="panel"><h2>Otevřené pozice</h2><p class="label" id="positionsAgent">Vybraný agent</p><div class="positions" id="positions"></div></div>
+    </section>
+
+    <div class="section-head"><div><h2>Poslední tržní zprávy</h2><p>Titulky jsou v originále; zpráva sama nikdy nespustí obchod.</p></div></div>
+    <section class="panel"><div class="news-list" id="newsList"></div></section>
+  </main>
+
+  <dialog id="capitalDialog">
+    <form id="capitalForm">
+      <div><div class="eyebrow">Nastavení portfolia</div><h2 id="dialogTitle">Kapitál agenta</h2></div>
+      <label>Počáteční kapitál v USD<input id="capitalInput" type="number" min="100" max="1000000000" step="100" required></label>
+      <label class="check"><input id="resetHistory" type="checkbox"><span>Resetovat otevřené pozice, obchody a equity křivku. Tuto akci nelze vrátit.</span></label>
+      <div class="dialog-actions"><button class="btn" type="button" id="cancelDialog">Zrušit</button><button class="btn primary" type="submit">Uložit kapitál</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const money = new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+    const number = new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 1 });
+    const accents = ['#4ade80', '#5eead4', '#fbbf24', '#a78bfa'];
+    let data = null;
+    let selectedAgentId = null;
+
+    const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
+    const metric = (label, value, tone = '') => { const box = el('div', 'metric'); box.append(el('span', 'label', label), el('strong', tone, value)); return box; };
+    const tone = value => value > 0 ? 'positive' : value < 0 ? 'negative' : '';
+
+    function toast(message, error = false) {
+      const box = document.getElementById('toast'); box.textContent = message; box.style.display = 'block'; box.style.borderColor = error ? 'var(--red)' : 'var(--line)';
+      window.setTimeout(() => box.style.display = 'none', 3500);
+    }
+
+    function renderAgents(agents) {
+      const grid = document.getElementById('agentGrid'); grid.replaceChildren();
+      const ranked = [...agents].sort((a, b) => b.total_return_percent - a.total_return_percent);
+      ranked.forEach((agent, index) => {
+        const card = el('article', 'card'); card.style.setProperty('--accent', accents[index % accents.length]);
+        const top = el('div', 'agent-top'); const title = el('div'); title.append(el('div', 'strategy', agent.strategy), el('h3', '', agent.name)); top.append(title, el('div', 'rank', `#${index + 1}`));
+        card.append(top, el('div', 'agent-equity', money.format(agent.equity)));
+        const change = el('div', tone(agent.total_return_percent), `${agent.total_return_percent >= 0 ? '+' : ''}${number.format(agent.total_return_percent)} % od startu`); card.append(change);
+        const metrics = el('div', 'metrics'); metrics.append(metric('Hotovost', money.format(agent.cash)), metric('Pozice', String(agent.open_positions.length)), metric('Win rate', `${number.format(agent.win_rate)} %`), metric('Max. drawdown', `${number.format(agent.max_drawdown_percent)} %`, 'negative')); card.append(metrics);
+        const actions = el('div', 'card-actions');
+        const detail = el('button', 'btn', 'Zobrazit detail'); detail.type = 'button'; detail.addEventListener('click', () => { selectedAgentId = agent.id; renderPositions(agent); drawCurve(agent); });
+        const capital = el('button', 'btn', 'Nastavit kapitál'); capital.type = 'button'; capital.addEventListener('click', () => openCapital(agent));
+        actions.append(detail, capital); card.append(actions); grid.append(card);
+      });
+    }
+
+    function renderLeaderboard(agents) {
+      const tbody = document.getElementById('leaderboard'); tbody.replaceChildren();
+      [...agents].sort((a,b) => b.total_return_percent - a.total_return_percent).forEach((agent, index) => {
+        const row = document.createElement('tr'); const values = [`#${index + 1}`, agent.name, money.format(agent.equity), `${agent.total_return_percent >= 0 ? '+' : ''}${number.format(agent.total_return_percent)} %`, `${number.format(agent.win_rate)} %`, `${number.format(agent.max_drawdown_percent)} %`, String(agent.closed_trades)];
+        values.forEach((value, i) => { const cell = el('td', i === 3 ? tone(agent.total_return_percent) : '', value); row.append(cell); }); row.addEventListener('click', () => { selectedAgentId = agent.id; renderPositions(agent); drawCurve(agent); }); tbody.append(row);
+      });
+    }
+
+    function renderPositions(agent) {
+      document.getElementById('positionsAgent').textContent = `${agent.name} · ${agent.strategy}`;
+      const box = document.getElementById('positions'); box.replaceChildren();
+      if (!agent.open_positions.length) { box.append(el('div', 'empty', 'Agent zatím nemá otevřenou pozici.')); return; }
+      agent.open_positions.forEach(position => {
+        const pnl = (position.current_price - position.entry_price) * position.quantity;
+        const item = el('div', 'position'); const top = el('div', 'position-top'); top.append(el('span', '', position.ticker), el('span', tone(pnl), `${pnl >= 0 ? '+' : ''}${money.format(pnl)}`));
+        item.append(top, el('div', 'position-meta', `${position.quantity} ks · vstup ${number.format(position.entry_price)} · nyní ${number.format(position.current_price)} · SL ${number.format(position.stop_loss)} · T2 ${number.format(position.target_2)}`)); box.append(item);
+      });
+    }
+
+    function drawCurve(agent) {
+      document.getElementById('chartSubtitle').textContent = `Equity curve: ${agent.name}`;
+      const canvas = document.getElementById('equityChart'); const ratio = window.devicePixelRatio || 1; const rect = canvas.getBoundingClientRect(); canvas.width = Math.max(rect.width * ratio, 300); canvas.height = 260 * ratio; const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio); const w = rect.width; const h = 260; ctx.clearRect(0,0,w,h);
+      const points = agent.equity_curve.length ? agent.equity_curve.map(p => p.equity) : [agent.initial_cash, agent.equity]; const min = Math.min(...points) * .995; const max = Math.max(...points) * 1.005; const span = Math.max(max - min, 1); const pad = 18;
+      ctx.strokeStyle = 'rgba(167,243,208,.12)'; ctx.lineWidth = 1; for (let i=0;i<5;i++) { const y=pad+(h-pad*2)*i/4; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+      const gradient = ctx.createLinearGradient(0,0,w,0); gradient.addColorStop(0,'#4ade80'); gradient.addColorStop(1,'#5eead4'); ctx.strokeStyle=gradient; ctx.lineWidth=2.5; ctx.beginPath(); points.forEach((value,i) => { const x=pad+(w-pad*2)*(points.length===1?0:i/(points.length-1)); const y=h-pad-(value-min)/span*(h-pad*2); if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); }); ctx.stroke();
+    }
+
+    function renderNews(items) {
+      const box = document.getElementById('newsList'); box.replaceChildren(); if (!items.length) { box.append(el('div','empty','Zatím nejsou načtené žádné zprávy.')); return; }
+      items.forEach(article => { const item=el('article','news-item'); const link=el('a','',article.title); link.href=article.url; link.target='_blank'; link.rel='noopener noreferrer'; item.append(link,el('div','news-meta',`${article.ticker || 'TRH'} · ${article.source} · skóre ${article.significance_score}/10`)); box.append(item); });
+    }
+
+    function render() {
+      const agents=data.agents; const ranked=[...agents].sort((a,b)=>b.total_return_percent-a.total_return_percent); const best=ranked[0];
+      document.getElementById('systemStatus').textContent=`Systém aktivní · ${data.mode} · kontrola každých 5 minut`;
+      document.getElementById('leagueCapital').textContent=money.format(agents.reduce((sum,a)=>sum+a.equity,0)); document.getElementById('bestAgent').textContent=best ? best.name : '—'; document.getElementById('openCount').textContent=String(agents.reduce((sum,a)=>sum+a.open_positions.length,0));
+      renderAgents(agents); renderLeaderboard(agents); renderNews(data.recent_news); const selected=agents.find(a=>a.id===selectedAgentId)||best; if(selected){selectedAgentId=selected.id;renderPositions(selected);drawCurve(selected);}
+    }
+
+    async function load() { try { const response=await fetch('/api/dashboard',{cache:'no-store'}); if(!response.ok)throw new Error('Dashboard API není dostupné'); data=await response.json(); render(); } catch(error) { document.getElementById('systemStatus').textContent='Dashboard je dočasně nedostupný'; toast(error.message,true); } }
+
+    function openCapital(agent) { selectedAgentId=agent.id; document.getElementById('dialogTitle').textContent=`Kapitál: ${agent.name}`; document.getElementById('capitalInput').value=agent.initial_cash; document.getElementById('resetHistory').checked=Boolean(agent.open_positions.length||agent.closed_trades||agent.equity_curve.length); document.getElementById('capitalDialog').showModal(); }
+    document.getElementById('capitalForm').addEventListener('submit', async event => { event.preventDefault(); const payload={capital:Number(document.getElementById('capitalInput').value),reset_history:document.getElementById('resetHistory').checked}; try { const response=await fetch(`/api/agents/${selectedAgentId}/capital`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const result=await response.json(); if(!response.ok)throw new Error(result.detail||'Kapitál nelze změnit'); document.getElementById('capitalDialog').close(); toast('Kapitál agenta byl uložen.'); await load(); } catch(error){toast(error.message,true);} });
+    document.getElementById('cancelDialog').addEventListener('click',()=>document.getElementById('capitalDialog').close()); document.getElementById('refresh').addEventListener('click',load); window.addEventListener('resize',()=>{if(data){const agent=data.agents.find(a=>a.id===selectedAgentId);if(agent)drawCurve(agent);}}); load(); window.setInterval(load,15000);
+  </script>
+</body>
+</html>

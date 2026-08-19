@@ -12,6 +12,7 @@ type NavigationItem = {
   label: string;
   hint: string;
   accent?: "sky" | "amber" | "emerald";
+  tradingAdminOnly?: boolean;
 };
 
 const publicNavigation: NavigationItem[] = [
@@ -29,6 +30,13 @@ const privateNavigation: NavigationItem[] = [
   { href: "/dashboard#import", label: "Import", hint: "Nahrání a kontrola ADIF", accent: "amber" },
   { href: "/dashboard#databaze", label: "Databáze", hint: "Filtry, DX a přehled QSO", accent: "emerald" },
   { href: "/qsl", label: "QSL správa", hint: "Schválení a odesílání lístků", accent: "emerald" },
+  {
+    href: "/trading",
+    label: "AI Trading",
+    hint: "PAPER agenti, pozice a výkonnost",
+    accent: "emerald",
+    tradingAdminOnly: true,
+  },
   { href: "/bezpecnost", label: "Bezpečnost", hint: "Přístupy a události na webu", accent: "amber" },
   { href: "/settings", label: "Nastavení", hint: "Domácí lokátor a další volby", accent: "sky" },
 ];
@@ -67,6 +75,7 @@ export function Sidebar() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isSolarControl, setIsSolarControl] = useState(false);
+  const [isTradingAdmin, setIsTradingAdmin] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(isSupabaseConfigured());
   const [currentHash, setCurrentHash] = useState("");
 
@@ -88,7 +97,11 @@ export function Sidebar() {
           cache: "no-store",
         });
 
-        const payload = (await response.json().catch(() => null)) as { authenticated?: boolean; solarControl?: boolean } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          authenticated?: boolean;
+          solarControl?: boolean;
+          tradingAdmin?: boolean;
+        } | null;
 
         if (!mounted) {
           return;
@@ -96,6 +109,7 @@ export function Sidebar() {
 
         setIsLoggedIn(Boolean(payload?.authenticated));
         setIsSolarControl(Boolean(payload?.solarControl));
+        setIsTradingAdmin(Boolean(payload?.tradingAdmin));
       } catch {
         if (!mounted) {
           return;
@@ -103,6 +117,7 @@ export function Sidebar() {
 
         setIsLoggedIn(false);
         setIsSolarControl(false);
+        setIsTradingAdmin(false);
       }
 
       if (!mounted) {
@@ -191,7 +206,14 @@ export function Sidebar() {
             })}
 
             {isLoggedIn
-              ? privateNavigation.filter((item) => item.href !== "/solar" && (!isSolarControl || item.href === "/solar")).map((item) => {
+              ? privateNavigation
+                  .filter(
+                    (item) =>
+                      item.href !== "/solar" &&
+                      (!isSolarControl || item.href === "/solar") &&
+                      (!item.tradingAdminOnly || isTradingAdmin),
+                  )
+                  .map((item) => {
                   const active = isActive(pathname, item.href, currentHash);
                   const classes = getPrivateItemClasses(item, active);
 
@@ -205,7 +227,7 @@ export function Sidebar() {
                       <p className="mt-1 text-sm opacity-80">{item.hint}</p>
                     </Link>
                   );
-                })
+                  })
               : null}
           </nav>
         </div>

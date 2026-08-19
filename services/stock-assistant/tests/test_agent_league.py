@@ -1,0 +1,113 @@
+import pytest
+
+from stock_assistant.agent_league import AgentLeague, score_snapshot, strategy_accepts
+from stock_assistant.config import Settings
+from stock_assistant.db import Repository
+
+
+def make_league(tmp_path):
+    settings = Settings(
+        database_path=tmp_path / "paper.db",
+        universe_cache_path=tmp_path / "universe.json",
+        log_path=tmp_path / "assistant.log",
+        agent_initial_cash=10_000,
+        agent_risk_per_trade=0.005,
+        agent_max_portfolio_risk=0.02,
+        agent_max_symbol_exposure=0.20,
+        agent_min_score=75,
+    )
+    repository = Repository(
+        settings.database_path,
+        settings.initial_cash,
+        settings.agent_initial_cash,
+    )
+    repository.initialize()
+    return repository, settings, AgentLeague(repository, settings)
+
+
+def test_repository_creates_four_isolated_paper_agents(tmp_path):
+    repository, _, _ = make_league(tmp_path)
+
+    accounts = repository.get_agent_accounts()
+
+    assert [account["strategy"] for account in accounts] == [
+        "TREND",
+        "BREAKOUT",
+        "MOMENTUM",
+        "HYBRID",
+    ]
+    assert all(account["initial_cash"] == 10_000 for account in accounts)
+    assert all(account["cash"] == 10_000 for account in accounts)
+
+
+def test_all_strategies_accept_strong_fixture(snapshot):
+    score = score_snapshot(snapshot)
+
+    assert score == 100
+    assert all(
+        strategy_accepts(strategy, snapshot, score)
+        for strategy in ("TREND", "BREAKOUT", "MOMENTUM", "HYBRID")
+    )
+
+
+def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
+    tmp_path,
+    snapshot,
+):
+    repository, _, league = make_league(tmp_path)
+
+    league.process({snapshot.ticker: snapshot})
+
+    for account in repository.get_agent_accounts():
+        state = repository.agent_runtime_state(int(account["id"]))
+        assert len(state["positions"]) == 1
+        position = state["positions"][0]
+        assert position["quantity"] == 16
+        assert position["stop_loss"] == pytest.approx(97)
+        assert position["target_1"] == pytest.approx(107.5)
+        assert position["target_2"] == pytest.approx(112)
+        assert state["portfolio_risk"] <= state["equity"] * 0.005
+
+    league.process({snapshot.ticker: snapshot})
+    assert all(
+        len(repository.get_agent_positions(int(account["id"]))) == 1
+        for account in repository.get_agent_accounts()
+    )
+
+    stopped = snapshot.model_copy(
+        update={
+            "current_price": 96,
+            "close": 96,
+            "open": 97,
+            "high": 97.5,
+            "low": 95.5,
+            "distance_ema20": -2.04,
+            "momentum_20": -3,
+            "relative_volume": 1.0,
+            "macd_histogram": -0.2,
+        }
+    )
+    league.process({stopped.ticker: stopped})
+
+    for agent in repository.agent_dashboard():
+        assert agent["open_positions"] == []
+        assert agent["realized_pnl"] == pytest.approx(-64)
+        assert agent["equity"] == pytest.approx(9_936)
+
+
+def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):
+    repository, _, league = make_league(tmp_path)
+    league.process({snapshot.ticker: snapshot})
+    agent_id = int(repository.get_agent_accounts()[0]["id"])
+
+    with pytest.raises(ValueError, match="historii nebo pozice"):
+        repository.reset_agent_capital(agent_id, 25_000, reset_history=False)
+
+    repository.reset_agent_capital(agent_id, 25_000, reset_history=True)
+    state = repository.agent_runtime_state(agent_id)
+    dashboard = next(item for item in repository.agent_dashboard() if item["id"] == agent_id)
+    assert state["cash"] == 25_000
+    assert state["equity"] == 25_000
+    assert state["positions"] == []
+    assert dashboard["recent_trades"] == []
+    assert dashboard["equity_curve"] == []

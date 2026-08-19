@@ -90,12 +90,10 @@ export function SolarAiSummary({ telemetry, history, summary, relays, forecast, 
     const timer = window.setInterval(() => setCurrentTime(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => {
-    if (selectedHour === null || !hours.includes(selectedHour)) setSelectedHour(hours.at(-1) ?? null);
-  }, [hours, selectedHour]);
-  const selectedEnergy = hourlyEnergy(history, viewMode === "24h" ? null : selectedHour);
-  const selectedIndex = selectedHour === null ? -1 : hours.indexOf(selectedHour);
-  const selectedLabel = viewMode === "24h" ? "24 hodin" : selectedHour ? hourLabel(selectedHour) : "Bez výběru";
+  const effectiveSelectedHour = selectedHour !== null && hours.includes(selectedHour) ? selectedHour : hours.at(-1) ?? null;
+  const selectedEnergy = hourlyEnergy(history, viewMode === "24h" ? null : effectiveSelectedHour);
+  const selectedIndex = effectiveSelectedHour === null ? -1 : hours.indexOf(effectiveSelectedHour);
+  const selectedLabel = viewMode === "24h" ? "24 hodin" : effectiveSelectedHour ? hourLabel(effectiveSelectedHour) : "Bez výběru";
   const elapsedSinceResetMinutes = Math.max(0, Math.floor((currentTime - new Date(new Date(currentTime).setMinutes(0, 0, 0)).getTime()) / 60_000));
   const status = alarmActive ? "Nouzový stav" : offline ? "Čekám na data" : batteryVoltage !== null && batteryVoltage < 11.8 ? "Nízké napětí" : "Systém pracuje";
   const tone = alarmActive || (batteryVoltage !== null && batteryVoltage < 11.8) ? "border-red-300 bg-red-50 dark:bg-red-950/30" : offline ? "border-amber-300 bg-amber-50 dark:bg-amber-950/30" : "solar-panel";
@@ -114,11 +112,11 @@ export function SolarAiSummary({ telemetry, history, summary, relays, forecast, 
   return <section className={`rounded-[2rem] border p-5 md:p-7 ${tone}`} aria-labelledby="solar-ai-summary-title">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="solar-eyebrow">Automatické hodinové vyhodnocení</p><h2 id="solar-ai-summary-title" className="mt-1 text-2xl font-semibold text-[var(--solar-text)]">Jak si systém vede</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--solar-muted)]">Souhrn vychází z telemetrie, relé a předpovědi. Zařízení se řídí pevnými bezpečnostními pravidly.</p></div><span className="rounded-full border border-black/10 bg-white/70 px-3 py-1 text-sm font-semibold text-[var(--solar-text)] dark:bg-black/20">{status}</span></div>
     <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1" aria-label="Výběr hodiny">
-      <button type="button" aria-label="Předchozí hodina" disabled={viewMode === "24h" || selectedIndex <= 0} onClick={() => setSelectedHour(hours[selectedIndex - 1] ?? selectedHour)} className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-bold text-[var(--solar-text)] disabled:cursor-not-allowed disabled:opacity-40">← −1h</button>
-      <button type="button" aria-label="Následující hodina" disabled={viewMode === "24h" || selectedIndex < 0 || selectedIndex >= hours.length - 1} onClick={() => setSelectedHour(hours[selectedIndex + 1] ?? selectedHour)} className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-bold text-[var(--solar-text)] disabled:cursor-not-allowed disabled:opacity-40">+1h →</button>
+      <button type="button" aria-label="Předchozí hodina" disabled={viewMode === "24h" || selectedIndex <= 0} onClick={() => setSelectedHour(hours[selectedIndex - 1] ?? effectiveSelectedHour)} className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-bold text-[var(--solar-text)] disabled:cursor-not-allowed disabled:opacity-40">← −1h</button>
+      <button type="button" aria-label="Následující hodina" disabled={viewMode === "24h" || selectedIndex < 0 || selectedIndex >= hours.length - 1} onClick={() => setSelectedHour(hours[selectedIndex + 1] ?? effectiveSelectedHour)} className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-bold text-[var(--solar-text)] disabled:cursor-not-allowed disabled:opacity-40">+1h →</button>
       <button type="button" onClick={() => setViewMode("24h")} className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition ${viewMode === "24h" ? "bg-slate-950 text-white" : "bg-white/70 text-[var(--solar-text)] hover:bg-white"}`}>24H</button>
       <span className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm text-[var(--solar-text)]">{elapsedSinceResetMinutes} min od začátku měření</span>
-      {selectedHour ? <span className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-semibold text-[var(--solar-text)]">{hourLabel(selectedHour)}</span> : <span className="text-sm text-[var(--solar-muted)]">Hodinová data nejsou dostupná.</span>}
+      {effectiveSelectedHour ? <span className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-semibold text-[var(--solar-text)]">{hourLabel(effectiveSelectedHour)}</span> : <span className="text-sm text-[var(--solar-muted)]">Hodinová data nejsou dostupná.</span>}
     </div>
     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Teoreticky dnes</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{kwh(forecast.estimatedKwh)}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">{forecast.source ? `Zdroj: ${forecast.source}` : "Předpověď není dostupná"}</p></div>
