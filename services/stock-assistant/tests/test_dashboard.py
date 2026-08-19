@@ -17,6 +17,7 @@ def make_client(tmp_path):
         settings.database_path,
         settings.initial_cash,
         settings.agent_initial_cash,
+        settings.agent_min_score,
     )
     repository.initialize()
     return TestClient(create_dashboard_app(repository, settings)), repository, settings
@@ -36,6 +37,8 @@ def test_czech_dashboard_and_api_are_available(tmp_path):
     assert payload.json()["engine"]["data_source"] == "Yahoo Finance OHLCV"
     assert payload.json()["engine"]["interval"] == "5m"
     assert len(payload.json()["agents"]) == 4
+    assert all(agent["learning"]["policy_version"] == 1 for agent in payload.json()["agents"])
+    assert all(agent["learning"]["trades_learned"] == 0 for agent in payload.json()["agents"])
     assert health.json() == {"ok": True, "mode": "PAPER"}
 
 

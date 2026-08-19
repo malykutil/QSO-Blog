@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     agent_max_positions: int = Field(default=5, ge=1, le=20)
     agent_max_symbol_exposure: float = Field(default=0.20, gt=0, le=0.50)
     agent_min_score: int = Field(default=75, ge=50, le=100)
+    agent_learning_rate: float = Field(default=0.12, ge=0.01, le=0.50)
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = Field(default=8765, ge=1024, le=65535)
     dashboard_api_token: str | None = Field(default=None, min_length=32)

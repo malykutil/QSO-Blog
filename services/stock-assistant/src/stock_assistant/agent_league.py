@@ -1,6 +1,11 @@
 import logging
 import math
 
+from stock_assistant.adaptive import (
+    adaptive_score,
+    learn_from_outcome,
+    snapshot_features,
+)
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
 from stock_assistant.models import IndicatorSnapshot
@@ -60,7 +65,7 @@ def strategy_accepts(strategy: str, snapshot: IndicatorSnapshot, score: float) -
 
 
 class AgentLeague:
-    """Four isolated deterministic PAPER portfolios sharing validated read-only quotes."""
+    """Four isolated adaptive PAPER portfolios sharing validated quotes."""
 
     def __init__(self, repository: Repository, settings: Settings) -> None:
         self.repository = repository
@@ -97,18 +102,20 @@ class AgentLeague:
             if snapshot is None:
                 continue
             if snapshot.current_price <= float(position["stop_loss"]):
-                self.repository.agent_close_position(
-                    agent_id=agent_id,
-                    ticker=ticker,
-                    price=snapshot.current_price,
-                    reason="Dosažen ochranný stop-loss.",
+                self._close_and_learn(
+                    agent_id,
+                    ticker,
+                    position,
+                    snapshot.current_price,
+                    "Dosažen ochranný stop-loss.",
                 )
             elif snapshot.current_price >= float(position["target_2"]):
-                self.repository.agent_close_position(
-                    agent_id=agent_id,
-                    ticker=ticker,
-                    price=snapshot.current_price,
-                    reason="Dosažen druhý cenový cíl.",
+                self._close_and_learn(
+                    agent_id,
+                    ticker,
+                    position,
+                    snapshot.current_price,
+                    "Dosažen druhý cenový cíl.",
                 )
 
         state = self.repository.agent_runtime_state(agent_id)
@@ -116,29 +123,99 @@ class AgentLeague:
         if len(positions) >= self.settings.agent_max_positions:
             return
 
-        ranked = sorted(
-            (
-                (score_snapshot(snapshot), snapshot)
-                for snapshot in snapshots.values()
-                if snapshot.ticker not in positions
-            ),
-            key=lambda item: item[0],
-            reverse=True,
-        )
-        for score, snapshot in ranked:
-            if score < self.settings.agent_min_score:
-                break
-            if not strategy_accepts(strategy, snapshot, score):
+        learning = self.repository.get_agent_learning_state(agent_id)
+        weights = dict(learning["weights"])
+        threshold = float(learning["decision_threshold"])
+        policy_version = int(learning["policy_version"])
+        ranked: list[tuple[float, float, dict[str, float], IndicatorSnapshot]] = []
+        for snapshot in snapshots.values():
+            if snapshot.ticker in positions:
                 continue
-            if self._try_open(agent_id, strategy, snapshot, score):
+            base_score = score_snapshot(snapshot)
+            features = snapshot_features(snapshot)
+            decision_score = adaptive_score(base_score, features, weights)
+            ranked.append((decision_score, base_score, features, snapshot))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+
+        for decision_score, base_score, features, snapshot in ranked:
+            if decision_score < threshold:
+                break
+            if not strategy_accepts(strategy, snapshot, base_score):
+                continue
+            if self._try_open(
+                agent_id,
+                strategy,
+                snapshot,
+                base_score,
+                decision_score,
+                features,
+                policy_version,
+            ):
                 break  # At most one new position per agent and cycle.
+
+    def _close_and_learn(
+        self,
+        agent_id: int,
+        ticker: str,
+        position: dict[str, object],
+        price: float,
+        reason: str,
+    ) -> None:
+        learning_update: dict[str, object] | None = None
+        try:
+            context = self.repository.get_agent_trade_context(agent_id, ticker)
+            learning = self.repository.get_agent_learning_state(agent_id)
+            if context is not None:
+                quantity = int(position["quantity"])
+                realized_pnl = (price - float(position["entry_price"])) * quantity
+                update = learn_from_outcome(
+                    features=dict(context["features"]),
+                    weights=dict(learning["weights"]),
+                    threshold=float(learning["decision_threshold"]),
+                    base_threshold=float(learning["base_threshold"]),
+                    realized_pnl=realized_pnl,
+                    initial_risk=float(context["initial_risk"]),
+                    learning_rate=self.settings.agent_learning_rate,
+                )
+                learning_update = {
+                    "weights": update.weights,
+                    "threshold": update.threshold,
+                    "reward_r": update.reward_r,
+                    "lesson": update.lesson,
+                }
+        except Exception as exc:
+            # A learning failure must never delay a protective PAPER exit.
+            logger.error(
+                "Agent learning failed; closing safely agent_id=%d ticker=%s error_type=%s",
+                agent_id,
+                ticker,
+                type(exc).__name__,
+            )
+
+        realized_pnl = self.repository.agent_close_position(
+            agent_id=agent_id,
+            ticker=ticker,
+            price=price,
+            reason=reason,
+            learning_update=learning_update,
+        )
+        logger.info(
+            "Agent PAPER SELL agent_id=%d ticker=%s pnl=%.2f learned=%s",
+            agent_id,
+            ticker,
+            realized_pnl,
+            learning_update is not None,
+        )
 
     def _try_open(
         self,
         agent_id: int,
         strategy: str,
         snapshot: IndicatorSnapshot,
-        score: float,
+        base_score: float,
+        decision_score: float,
+        features: dict[str, float],
+        policy_version: int,
     ) -> bool:
         state = self.repository.agent_runtime_state(agent_id)
         equity = float(state["equity"])
@@ -149,7 +226,8 @@ class AgentLeague:
             return False
         risk_per_share = entry - stop
         remaining_portfolio_risk = max(
-            equity * self.settings.agent_max_portfolio_risk - float(state["portfolio_risk"]),
+            equity * self.settings.agent_max_portfolio_risk
+            - float(state["portfolio_risk"]),
             0,
         )
         risk_budget = min(
@@ -166,6 +244,7 @@ class AgentLeague:
             return False
         target_1 = entry + self.settings.min_risk_reward * risk_per_share
         target_2 = entry + 4 * risk_per_share
+        initial_risk = quantity * risk_per_share
         self.repository.agent_open_position(
             agent_id=agent_id,
             ticker=snapshot.ticker,
@@ -174,15 +253,26 @@ class AgentLeague:
             stop_loss=stop,
             target_1=target_1,
             target_2=target_2,
-            scanner_score=score,
-            reason=f"Strategie {strategy}: deterministické skóre {score:.1f}/100.",
+            scanner_score=decision_score,
+            reason=(
+                f"Strategie {strategy}: adaptivní skóre {decision_score:.1f}/100 "
+                f"(technické {base_score:.1f}), politika v{policy_version}."
+            ),
+            features=features,
+            base_score=base_score,
+            decision_score=decision_score,
+            initial_risk=initial_risk,
+            policy_version=policy_version,
         )
         logger.info(
-            "Agent PAPER BUY agent_id=%d strategy=%s ticker=%s score=%.1f quantity=%d",
+            "Agent PAPER BUY agent_id=%d strategy=%s ticker=%s "
+            "base_score=%.1f decision_score=%.1f policy=%d quantity=%d",
             agent_id,
             strategy,
             snapshot.ticker,
-            score,
+            base_score,
+            decision_score,
+            policy_version,
             quantity,
         )
         return True

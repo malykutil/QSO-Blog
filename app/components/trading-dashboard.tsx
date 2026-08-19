@@ -117,6 +117,107 @@ function EquityChart({ agent }: { agent: TradingAgent }) {
   return <canvas ref={canvasRef} className="mt-5 h-[250px] w-full" aria-label={`Vývoj equity agenta ${agent.name}`} />;
 }
 
+const learningLabels = {
+  trend: "Trend",
+  momentum: "Momentum",
+  volume: "Relativní objem",
+  breakout: "Průraz ceny",
+  quality: "Kvalita trhu",
+} as const;
+
+function LearningPanel({ agent }: { agent: TradingAgent }) {
+  const learning = agent.learning;
+  const learnedWinRate = learning.trades_learned
+    ? (learning.wins / learning.trades_learned) * 100
+    : 0;
+
+  return (
+    <section className="glass-panel rounded-[1.8rem] p-6">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Adaptivní model</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-950">Jak se učí · {agent.name}</h2>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="rounded-full bg-violet-100 px-3 py-1.5 text-violet-800">
+            Politika v{learning.policy_version}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">
+            {learning.trades_learned} naučených obchodů
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div>
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <div className="rounded-2xl bg-white/80 p-4">
+              <p className="text-slate-500">Práh vstupu</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{decimal.format(learning.decision_threshold)}</p>
+            </div>
+            <div className="rounded-2xl bg-white/80 p-4">
+              <p className="text-slate-500">Úspěšnost učení</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{decimal.format(learnedWinRate)} %</p>
+            </div>
+            <div className="rounded-2xl bg-white/80 p-4">
+              <p className="text-slate-500">Výhry / ztráty</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{learning.wins} / {learning.losses}</p>
+            </div>
+            <div className="rounded-2xl bg-white/80 p-4">
+              <p className="text-slate-500">Součet R</p>
+              <p className={`mt-1 text-xl font-semibold ${valueTone(learning.cumulative_reward_r)}`}>
+                {learning.cumulative_reward_r >= 0 ? "+" : ""}{decimal.format(learning.cumulative_reward_r)} R
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {Object.entries(learning.weights).map(([key, weight]) => (
+              <div key={key}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-700">{learningLabels[key as keyof typeof learningLabels]}</span>
+                  <span className="font-semibold text-slate-950">{decimal.format(weight)}×</span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500"
+                    style={{ width: `${Math.min((weight / 3) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="font-semibold text-slate-950">Poslední lekce z uzavřených obchodů</h3>
+          <div className="mt-3 space-y-3">
+            {learning.recent_lessons.length ? learning.recent_lessons.map((lesson) => (
+              <article key={`${lesson.policy_version}-${lesson.ticker}`} className="rounded-2xl border border-slate-900/8 bg-white/80 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-slate-950">{lesson.ticker} · v{lesson.policy_version}</strong>
+                  <span className={`text-sm font-semibold ${valueTone(lesson.reward_r)}`}>
+                    {lesson.reward_r >= 0 ? "+" : ""}{decimal.format(lesson.reward_r)} R · {money.format(lesson.realized_pnl)}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{lesson.lesson}</p>
+                <p className="mt-1 text-xs text-slate-400">{new Date(lesson.created_at).toLocaleString("cs-CZ")}</p>
+              </article>
+            )) : (
+              <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center leading-6 text-slate-500">
+                První lekce vznikne po uzavření PAPER obchodu. Do té doby agent používá bezpečný výchozí profil své strategie.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="mt-5 text-xs leading-5 text-slate-500">
+        Váhy a práh se mění jen omezeně podle výsledku v R. Stop-loss, maximální riziko a PAPER-only režim se učením nemění.
+      </p>
+    </section>
+  );
+}
+
 export function TradingDashboard() {
   const [data, setData] = useState<TradingDashboardPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -269,6 +370,9 @@ export function TradingDashboard() {
                   </div>
                   <span className="text-sm text-slate-500">#{index + 1}</span>
                 </div>
+                <p className="mt-4 inline-flex rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
+                  Učení v{agent.learning.policy_version} · {agent.learning.trades_learned} obchodů
+                </p>
                 <p className="mt-7 text-3xl font-semibold tracking-tight text-slate-950">{money.format(agent.equity)}</p>
                 <p className={`mt-1 text-sm font-semibold ${valueTone(agent.total_return_percent)}`}>
                   {signedPercent(agent.total_return_percent)} od startu
@@ -292,8 +396,9 @@ export function TradingDashboard() {
           </section>
 
           {selectedAgent ? (
-            <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-              <div className="glass-panel rounded-[1.8rem] p-6">
+            <>
+              <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+                <div className="glass-panel rounded-[1.8rem] p-6">
                 <div className="flex items-end justify-between gap-4">
                   <div><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Výkonnost</p><h2 className="mt-2 text-2xl font-semibold text-slate-950">Equity · {selectedAgent.name}</h2></div>
                   <p className="text-sm text-slate-500">{selectedAgent.closed_trades} uzavřených obchodů</p>
@@ -309,9 +414,9 @@ export function TradingDashboard() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+                </div>
 
-              <div className="glass-panel rounded-[1.8rem] p-6">
+                <div className="glass-panel rounded-[1.8rem] p-6">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Portfolio</p>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-950">Pozice · {selectedAgent.name}</h2>
                 <div className="mt-5 space-y-3">
@@ -326,8 +431,10 @@ export function TradingDashboard() {
                     );
                   }) : <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-slate-500">Agent zatím nemá otevřenou pozici.</p>}
                 </div>
-              </div>
-            </section>
+                </div>
+              </section>
+              <LearningPanel agent={selectedAgent} />
+            </>
           ) : null}
 
           <section className="glass-panel rounded-[1.8rem] p-6">
@@ -357,7 +464,7 @@ export function TradingDashboard() {
             </label>
             <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-600">
               <input type="checkbox" checked={resetHistory} onChange={(event) => setResetHistory(event.target.checked)} className="mt-1" />
-              Resetovat otevřené pozice, obchody a equity křivku. Tuto akci nelze vrátit.
+              Resetovat otevřené pozice, obchody, equity křivku i naučený profil. Tuto akci nelze vrátit.
             </label>
             <div className="mt-7 flex justify-end gap-3">
               <button type="button" onClick={() => setCapitalAgent(null)} disabled={saving} className="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700">Zrušit</button>

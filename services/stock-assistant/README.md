@@ -25,7 +25,10 @@ možnost obchodovat skutečné peníze**.
   [oficiální OpenAI dokumentaci](https://developers.openai.com/api/docs/guides/structured-outputs).
 - Paper účet, otevřené pozice, signály, obchody, alerty a běhy cyklu jsou v SQLite.
 - Lokální český dashboard porovnává čtyři izolované PAPER strategie, jejich equity,
-  výnos, drawdown, win rate, obchody a otevřené pozice.
+  výnos, drawdown, win rate, obchody, otevřené pozice a naučený rozhodovací profil.
+- Po každém uzavřeném PAPER obchodu si každý agent samostatně upraví omezené váhy trendu,
+  momenta, relativního objemu, průrazu a kvality trhu. Zároveň mírně upraví minimální práh
+  pro další vstup podle výsledku vyjádřeného v násobcích původního rizika (`R`).
 - Telegram posílá jen skutečně provedené PAPER `BUY`/`SELL`; stejnou nevýznamně
   změněnou zprávu znovu nepošle.
 - U otevřených paper pozic posílá také průběžný `PAPER UPDATE` s nerealizovaným P/L,
@@ -87,7 +90,16 @@ Každý začíná standardně s 10 000 USD, riskuje nejvýše 0,5 % equity na ob
 2 % celého portfolia a nejvýše 20 % equity v jednom tickeru. Tyto hodnoty lze změnit
 v `.env`. Počáteční kapitál každého agenta lze změnit přímo v UI. Pokud už má agent
 pozice nebo historii, API vyžaduje výslovně potvrzený reset, aby se nic nesmazalo omylem.
-Jde o srovnání obchodních strategií, nikoli o čtyři samostatné OpenAI modely.
+Jde o srovnání adaptivních obchodních strategií, nikoli o čtyři samostatné OpenAI modely.
+Každý agent má vlastní trvale uložené váhy, historii lekcí a verzi politiky. Výchozí technické
+skóre tvoří 65 % rozhodnutí a naučený profil 35 %. Tvrdé podmínky strategie, stop-loss,
+position sizing a PAPER-only režim se učením nikdy nemění. Váhy jsou omezené na rozsah
+0,25–3,0 a rozhodovací práh na bezpečný rozsah kolem výchozí hodnoty. Reset portfolia v UI
+resetuje také naučený profil, ale pouze po výslovném potvrzení.
+
+Toto je vysvětlitelné online přizpůsobování z uzavřených obchodů, nikoli příslib zisku ani
+nekontrolované „sebeprogramování“. Na začátku pracují agenti s výchozím profilem a statistická
+vypovídací hodnota roste až s počtem uzavřených PAPER obchodů.
 
 Pro kontejnerové nasazení lze dashboard bezpečně vystavit přes
 `DASHBOARD_HOST=0.0.0.0` pouze tehdy, když je současně nastavený náhodný
@@ -258,7 +270,8 @@ src/stock_assistant/
   news.py          # RSS monitoring, scoring a deduplikace zpráv
   risk.py          # nezávislá validace a position sizing
   paper.py         # pouze SQLite paper broker
-  agent_league.py  # čtyři izolované deterministické PAPER strategie
+  agent_league.py  # čtyři izolované adaptivní PAPER strategie
+  adaptive.py      # rysy, skóre a omezené online učení z výsledků v R
   dashboard.py     # lokální české FastAPI UI/API
   db.py            # SQLite schema, metriky a transakce
   telegram.py      # BUY/SELL alert + deduplikace

@@ -54,6 +54,7 @@ def build_application(settings: Settings | None = None) -> Application:
         settings.database_path,
         settings.initial_cash,
         settings.agent_initial_cash,
+        settings.agent_min_score,
     )
     repository.initialize()
 

@@ -20,6 +20,7 @@ def make_league(tmp_path):
         settings.database_path,
         settings.initial_cash,
         settings.agent_initial_cash,
+        settings.agent_min_score,
     )
     repository.initialize()
     return repository, settings, AgentLeague(repository, settings)
@@ -93,6 +94,39 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
         assert agent["open_positions"] == []
         assert agent["realized_pnl"] == pytest.approx(-64)
         assert agent["equity"] == pytest.approx(9_936)
+        assert agent["learning"]["trades_learned"] == 1
+        assert agent["learning"]["losses"] == 1
+        assert agent["learning"]["wins"] == 0
+        assert agent["learning"]["policy_version"] == 2
+        assert agent["learning"]["decision_threshold"] > 75
+        assert "Ztráta" in agent["learning"]["recent_lessons"][0]["lesson"]
+
+
+def test_agent_league_learns_from_a_target_win(tmp_path, snapshot):
+    repository, _, league = make_league(tmp_path)
+    league.process({snapshot.ticker: snapshot})
+
+    target = snapshot.model_copy(
+        update={
+            "current_price": 113,
+            "close": 113,
+            "open": 112,
+            "high": 114,
+            "low": 111,
+            "distance_ema20": 15.3,
+        }
+    )
+    league.process({target.ticker: target})
+
+    for agent in repository.agent_dashboard():
+        learning = agent["learning"]
+        assert agent["realized_pnl"] == pytest.approx(208)
+        assert learning["trades_learned"] == 1
+        assert learning["wins"] == 1
+        assert learning["losses"] == 0
+        assert learning["last_reward_r"] == pytest.approx(208 / 48)
+        assert learning["decision_threshold"] < 75
+        assert "Zisk" in learning["recent_lessons"][0]["lesson"]
 
 
 def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):
@@ -111,3 +145,6 @@ def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):
     assert state["positions"] == []
     assert dashboard["recent_trades"] == []
     assert dashboard["equity_curve"] == []
+    assert dashboard["learning"]["trades_learned"] == 0
+    assert dashboard["learning"]["policy_version"] == 1
+    assert dashboard["learning"]["recent_lessons"] == []
