@@ -20,7 +20,11 @@ const localAssistantUrl = "http://127.0.0.1:8765";
 type DashboardSource = "cloud" | "local";
 
 async function fetchDashboard(url: string) {
-  const response = await fetch(url, { cache: "no-store", credentials: "omit" });
+  const isLocalRequest = url.startsWith(localAssistantUrl);
+  const response = await fetch(url, {
+    cache: "no-store",
+    credentials: isLocalRequest ? "omit" : "same-origin",
+  });
   const payload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
     const message =
@@ -180,7 +184,7 @@ export function TradingDashboard() {
       const response = await fetch(capitalUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "omit",
+        credentials: dataSource === "local" ? "omit" : "same-origin",
         body: JSON.stringify({ capital, reset_history: resetHistory }),
       });
       const payload = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null;
