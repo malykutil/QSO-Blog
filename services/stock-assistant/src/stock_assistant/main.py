@@ -27,7 +27,7 @@ from stock_assistant.runner import TradingCycle
 from stock_assistant.screening import DeterministicScreener
 from stock_assistant.telegram import TelegramNotifier
 from stock_assistant.telegram_commands import TelegramCommandService
-from stock_assistant.universe import UniverseProvider
+from stock_assistant.universe import EuropeanUniverseProvider, UniverseProvider
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ def build_application(settings: Settings | None = None) -> Application:
         settings.initial_cash,
         settings.agent_initial_cash,
         settings.agent_min_score,
+        settings.agent_europe_initial_cash,
     )
     repository.initialize()
 
@@ -106,6 +107,9 @@ def build_application(settings: Settings | None = None) -> Application:
         repository=repository,
         universe=UniverseProvider(
             settings.universe_cache_path, settings.universe_cache_hours
+        ),
+        europe_universe=EuropeanUniverseProvider(
+            settings.europe_universe_cache_path, settings.universe_cache_hours
         ),
         market_data=YahooMarketDataProvider(
             period=settings.market_data_period,

@@ -44,6 +44,8 @@ export type TradingAgent = {
   slug: string;
   name: string;
   strategy: "TREND" | "BREAKOUT" | "MOMENTUM" | "HYBRID";
+  market: "US" | "EU";
+  currency: "USD" | "EUR";
   initial_cash: number;
   cash: number;
   enabled: number;
@@ -149,6 +151,8 @@ function isAgent(value: unknown): value is TradingAgent {
     typeof value.slug === "string" &&
     typeof value.name === "string" &&
     ["TREND", "BREAKOUT", "MOMENTUM", "HYBRID"].includes(String(value.strategy)) &&
+    ["US", "EU"].includes(String(value.market)) &&
+    ["USD", "EUR"].includes(String(value.currency)) &&
     isFiniteNumber(value.initial_cash) &&
     isFiniteNumber(value.cash) &&
     isFiniteNumber(value.equity) &&
@@ -177,7 +181,7 @@ export function isTradingDashboardPayload(value: unknown): value is TradingDashb
         typeof engine.last_cycle.status === "string" &&
         typeof engine.last_cycle.started_at === "string")) &&
     Array.isArray(value.agents) &&
-    value.agents.length === 4 &&
+    value.agents.length === 8 &&
     value.agents.every(isAgent) &&
     Array.isArray(value.recent_news) &&
     value.recent_news.length <= 50

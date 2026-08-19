@@ -1,5 +1,6 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from stock_assistant.agent_league import AgentLeague
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
 from stock_assistant.models import Action, TradeAnalysis
@@ -17,6 +18,11 @@ class FakeUniverse:
 class FakeMarketData:
     def fetch(self, symbols):
         return {symbol: object() for symbol in symbols}
+
+
+class FakeEuropeUniverse:
+    def get_symbols(self, override=None):
+        return ["ADS.DE"]
 
 
 class RecordingAnalyzer:
@@ -112,3 +118,49 @@ def test_protective_exit_cannot_reenter_on_same_bar(tmp_path, snapshot, monkeypa
     cycle.run()
     assert repository.get_positions() == {}
     assert "PASS" not in analyzer.tickers
+
+
+def test_europe_agents_run_while_us_market_is_closed(tmp_path, snapshot, monkeypatch):
+    settings = Settings(
+        database_path=tmp_path / "paper.db",
+        universe_cache_path=tmp_path / "universe.json",
+        europe_universe_cache_path=tmp_path / "europe-universe.json",
+    )
+    repository = Repository(settings.database_path, settings.initial_cash)
+    repository.initialize()
+    analyzer = RecordingAnalyzer()
+    fixed_now = datetime(2026, 8, 19, 10, 0, tzinfo=UTC)
+
+    monkeypatch.setattr("stock_assistant.runner.nyse_is_open", lambda _now: False)
+    monkeypatch.setattr("stock_assistant.runner.europe_is_open", lambda _now: True)
+    monkeypatch.setattr(
+        "stock_assistant.runner.build_snapshot",
+        lambda ticker, _frame: snapshot.model_copy(
+            update={"ticker": ticker, "timestamp": fixed_now - timedelta(minutes=20)}
+        ),
+    )
+    cycle = TradingCycle(
+        settings=settings,
+        repository=repository,
+        universe=FakeUniverse(),
+        europe_universe=FakeEuropeUniverse(),
+        market_data=FakeMarketData(),
+        screener=DeterministicScreener(),
+        analyzer=analyzer,
+        broker=PaperBroker(repository),
+        notifier=TelegramNotifier(repository, None, None),
+        agent_league=AgentLeague(repository, settings),
+        clock=lambda: fixed_now,
+    )
+
+    cycle.run()
+
+    assert analyzer.tickers == []
+    assert all(
+        repository.get_agent_positions(int(account["id"])) == []
+        for account in repository.get_agent_accounts("US")
+    )
+    assert all(
+        len(repository.get_agent_positions(int(account["id"]))) == 1
+        for account in repository.get_agent_accounts("EU")
+    )

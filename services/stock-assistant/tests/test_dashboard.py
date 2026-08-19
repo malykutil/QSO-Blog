@@ -31,12 +31,13 @@ def test_czech_dashboard_and_api_are_available(tmp_path):
     health = client.get("/api/health")
 
     assert page.status_code == 200
-    assert "Čtyři strategie" in page.text
+    assert "Osm strategií" in page.text
     assert payload.status_code == 200
     assert payload.json()["mode"] == "PAPER"
     assert payload.json()["engine"]["data_source"] == "Yahoo Finance OHLCV"
     assert payload.json()["engine"]["interval"] == "5m"
-    assert len(payload.json()["agents"]) == 4
+    assert len(payload.json()["agents"]) == 8
+    assert {agent["market"] for agent in payload.json()["agents"]} == {"US", "EU"}
     assert all(agent["learning"]["policy_version"] == 1 for agent in payload.json()["agents"])
     assert all(agent["learning"]["trades_learned"] == 0 for agent in payload.json()["agents"])
     assert health.json() == {"ok": True, "mode": "PAPER"}
@@ -68,7 +69,7 @@ def test_dashboard_allows_private_browser_bridge_only_for_configured_origin(tmp_
 def test_capital_api_refuses_silent_history_deletion(tmp_path, snapshot):
     client, repository, settings = make_client(tmp_path)
     AgentLeague(repository, settings).process({snapshot.ticker: snapshot})
-    agent_id = int(repository.get_agent_accounts()[0]["id"])
+    agent_id = int(repository.get_agent_accounts("US")[0]["id"])
 
     rejected = client.put(
         f"/api/agents/{agent_id}/capital",
@@ -103,4 +104,4 @@ def test_remote_dashboard_requires_bearer_token(tmp_path):
         headers={"Authorization": f"Bearer {settings.dashboard_api_token}"},
     )
     assert response.status_code == 200
-    assert len(response.json()["agents"]) == 4
+    assert len(response.json()["agents"]) == 8

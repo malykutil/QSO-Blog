@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from stock_assistant.agent_league import AgentLeague, score_snapshot, strategy_accepts
@@ -26,7 +28,7 @@ def make_league(tmp_path):
     return repository, settings, AgentLeague(repository, settings)
 
 
-def test_repository_creates_four_isolated_paper_agents(tmp_path):
+def test_repository_creates_eight_isolated_regional_paper_agents(tmp_path):
     repository, _, _ = make_league(tmp_path)
 
     accounts = repository.get_agent_accounts()
@@ -36,9 +38,48 @@ def test_repository_creates_four_isolated_paper_agents(tmp_path):
         "BREAKOUT",
         "MOMENTUM",
         "HYBRID",
+        "TREND",
+        "BREAKOUT",
+        "MOMENTUM",
+        "HYBRID",
     ]
+    assert [account["market"] for account in accounts] == ["US"] * 4 + ["EU"] * 4
+    assert [account["currency"] for account in accounts] == ["USD"] * 4 + ["EUR"] * 4
     assert all(account["initial_cash"] == 10_000 for account in accounts)
     assert all(account["cash"] == 10_000 for account in accounts)
+
+
+def test_existing_four_agent_database_migrates_without_losing_cash(tmp_path):
+    database = tmp_path / "legacy.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """CREATE TABLE agent_accounts (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   slug TEXT NOT NULL UNIQUE,
+                   name TEXT NOT NULL,
+                   strategy TEXT NOT NULL,
+                   initial_cash REAL NOT NULL,
+                   cash REAL NOT NULL,
+                   enabled INTEGER NOT NULL,
+                   created_at TEXT NOT NULL,
+                   updated_at TEXT NOT NULL
+               )"""
+        )
+        connection.execute(
+            """INSERT INTO agent_accounts
+               (slug, name, strategy, initial_cash, cash, enabled, created_at, updated_at)
+               VALUES ('trend', 'Trend', 'TREND', 10000, 9876, 1, 'old', 'old')"""
+        )
+
+    repository = Repository(database, 100_000, 10_000, 75, 10_000)
+    repository.initialize()
+    accounts = repository.get_agent_accounts()
+    migrated = next(account for account in accounts if account["slug"] == "trend")
+
+    assert len(accounts) == 8
+    assert migrated["cash"] == 9_876
+    assert migrated["market"] == "US"
+    assert migrated["currency"] == "USD"
 
 
 def test_all_strategies_accept_strong_fixture(snapshot):
@@ -59,7 +100,7 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
 
     league.process({snapshot.ticker: snapshot})
 
-    for account in repository.get_agent_accounts():
+    for account in repository.get_agent_accounts("US"):
         state = repository.agent_runtime_state(int(account["id"]))
         assert len(state["positions"]) == 1
         position = state["positions"][0]
@@ -72,7 +113,7 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
     league.process({snapshot.ticker: snapshot})
     assert all(
         len(repository.get_agent_positions(int(account["id"]))) == 1
-        for account in repository.get_agent_accounts()
+        for account in repository.get_agent_accounts("US")
     )
 
     stopped = snapshot.model_copy(
@@ -91,6 +132,8 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
     league.process({stopped.ticker: stopped})
 
     for agent in repository.agent_dashboard():
+        if agent["market"] != "US":
+            continue
         assert agent["open_positions"] == []
         assert agent["realized_pnl"] == pytest.approx(-64)
         assert agent["equity"] == pytest.approx(9_936)
@@ -119,6 +162,8 @@ def test_agent_league_learns_from_a_target_win(tmp_path, snapshot):
     league.process({target.ticker: target})
 
     for agent in repository.agent_dashboard():
+        if agent["market"] != "US":
+            continue
         learning = agent["learning"]
         assert agent["open_positions"] == []
         assert agent["realized_pnl"] == pytest.approx(208)
@@ -133,7 +178,7 @@ def test_agent_league_learns_from_a_target_win(tmp_path, snapshot):
 def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):
     repository, _, league = make_league(tmp_path)
     league.process({snapshot.ticker: snapshot})
-    agent_id = int(repository.get_agent_accounts()[0]["id"])
+    agent_id = int(repository.get_agent_accounts("US")[0]["id"])
 
     with pytest.raises(ValueError, match="historii nebo pozice"):
         repository.reset_agent_capital(agent_id, 25_000, reset_history=False)
@@ -149,3 +194,21 @@ def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):
     assert dashboard["learning"]["trades_learned"] == 0
     assert dashboard["learning"]["policy_version"] == 1
     assert dashboard["learning"]["recent_lessons"] == []
+
+
+def test_europe_cycle_trades_only_european_accounts(tmp_path, snapshot):
+    repository, _, league = make_league(tmp_path)
+    european = snapshot.model_copy(update={"ticker": "ADS.DE"})
+
+    league.process({european.ticker: european}, market="EU")
+
+    us_accounts = repository.get_agent_accounts("US")
+    eu_accounts = repository.get_agent_accounts("EU")
+    assert all(
+        repository.get_agent_positions(int(account["id"])) == []
+        for account in us_accounts
+    )
+    assert all(
+        len(repository.get_agent_positions(int(account["id"]))) == 1
+        for account in eu_accounts
+    )

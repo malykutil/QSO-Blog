@@ -65,17 +65,22 @@ def strategy_accepts(strategy: str, snapshot: IndicatorSnapshot, score: float) -
 
 
 class AgentLeague:
-    """Four isolated adaptive PAPER portfolios sharing validated quotes."""
+    """Eight region-isolated adaptive PAPER portfolios sharing validated quotes."""
 
     def __init__(self, repository: Repository, settings: Settings) -> None:
         self.repository = repository
         self.settings = settings
 
-    def process(self, snapshots: dict[str, IndicatorSnapshot]) -> None:
+    def process(
+        self,
+        snapshots: dict[str, IndicatorSnapshot],
+        *,
+        market: str = "US",
+    ) -> None:
         if not snapshots:
             return
         self.repository.save_market_quotes(snapshots)
-        for account in self.repository.get_agent_accounts():
+        for account in self.repository.get_agent_accounts(market):
             if not account["enabled"]:
                 continue
             agent_id = int(account["id"])

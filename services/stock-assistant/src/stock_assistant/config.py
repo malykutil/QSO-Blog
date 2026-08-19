@@ -22,10 +22,12 @@ class Settings(BaseSettings):
 
     database_path: Path = Path("data/stock_assistant.db")
     universe_cache_path: Path = Path("data/universe.json")
+    europe_universe_cache_path: Path = Path("data/europe_universe.json")
     log_path: Path = Path("logs/assistant.log")
     log_level: str = "INFO"
     initial_cash: float = Field(default=100_000.0, gt=0)
     agent_initial_cash: float = Field(default=10_000.0, gt=0)
+    agent_europe_initial_cash: float = Field(default=10_000.0, gt=0)
     agent_risk_per_trade: float = Field(default=0.005, ge=0.0025, le=0.01)
     agent_max_portfolio_risk: float = Field(default=0.02, gt=0, le=0.05)
     agent_max_positions: int = Field(default=5, ge=1, le=20)
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
     min_risk_reward: float = Field(default=2.5, ge=2.5)
     max_llm_candidates: int = Field(default=15, ge=1, le=100)
     max_quote_age_minutes: int = Field(default=15, ge=1, le=120)
+    europe_max_quote_age_minutes: int = Field(default=30, ge=15, le=120)
     market_data_batch_size: int = Field(default=50, ge=1, le=200)
     market_data_period: str = "10d"
     market_data_interval: str = "5m"
@@ -58,6 +61,7 @@ class Settings(BaseSettings):
     news_global_query: str = 'NASDAQ OR "S&P 500" stock market when:1d'
     run_outside_market_hours: bool = False
     universe_override: str | None = None
+    europe_universe_override: str | None = None
 
     @field_validator(
         "openai_api_key",
@@ -92,6 +96,18 @@ class Settings(BaseSettings):
         return sorted({item.strip().upper() for item in self.universe_override.split(",") if item})
 
     @property
+    def europe_override_symbols(self) -> list[str] | None:
+        if not self.europe_universe_override:
+            return None
+        return sorted(
+            {
+                item.strip().upper()
+                for item in self.europe_universe_override.split(",")
+                if item.strip()
+            }
+        )
+
+    @property
     def dashboard_allowed_origins(self) -> list[str]:
         return sorted(
             {
@@ -104,6 +120,7 @@ class Settings(BaseSettings):
     def ensure_directories(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.universe_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.europe_universe_cache_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
 

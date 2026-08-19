@@ -1,7 +1,7 @@
 # AI Stock Trading Assistant (PAPER ONLY)
 
 Produkčně strukturovaný Python servis pro pětiminutový screening akcií z indexů
-NASDAQ-100 a S&P 500. První filtr je čistě deterministický a do OpenAI API odejdou
+NASDAQ-100, S&P 500 a EURO STOXX 50. První filtr je čistě deterministický a do OpenAI API odejdou
 jen kandidáti, kteří jím prošli. Aplikace **neobsahuje broker integraci ani žádnou
 možnost obchodovat skutečné peníze**.
 
@@ -13,8 +13,10 @@ možnost obchodovat skutečné peníze**.
 ## Co projekt dělá
 
 - APScheduler spouští jeden cyklus každých 5 minut; překryv běhů je zakázaný.
-- Podle NYSE kalendáře se mimo řádné obchodní hodiny a o svátcích cyklus bezpečně přeskočí.
-- Universe se načítá z veřejných seznamů S&P 500 a Nasdaq-100 a 24 hodin cachuje.
+- Americká liga respektuje kalendář NYSE, evropská liga společné obchodní okno EURO
+  STOXX 50 podle kalendáře Xetra. Každý region se může spustit nezávisle.
+- USA universe se načítá z veřejných seznamů S&P 500 a Nasdaq-100. Evropský universe
+  obsahuje 50 akcií EURO STOXX 50 s Yahoo exchange suffixy. Oba seznamy se 24 hodin cachují.
 - OHLCV má výchozí timeframe 5 minut a historii 10 dní (dostatek pro EMA200).
 - Počítá EMA20, EMA50, EMA200, RSI(14), MACD(12,26,9), ATR(14) a relativní volume(20).
 - Deterministický vstupní filtr vyžaduje bullish EMA stack, RSI 50–70, kladný MACD
@@ -24,7 +26,7 @@ možnost obchodovat skutečné peníze**.
   odpověď odpovídá přesnému JSON schématu. Tento postup odpovídá
   [oficiální OpenAI dokumentaci](https://developers.openai.com/api/docs/guides/structured-outputs).
 - Paper účet, otevřené pozice, signály, obchody, alerty a běhy cyklu jsou v SQLite.
-- Lokální český dashboard porovnává čtyři izolované PAPER strategie, jejich equity,
+- Lokální český dashboard porovnává osm izolovaných PAPER strategií, jejich equity,
   výnos, drawdown, win rate, obchody, otevřené pozice a naučený rozhodovací profil.
 - Po každém uzavřeném PAPER obchodu si každý agent samostatně upraví omezené váhy trendu,
   momenta, relativního objemu, průrazu a kvality trhu. Zároveň mírně upraví minimální práh
@@ -67,13 +69,13 @@ LLM není exekuční ani cenový zdroj. Server po každé odpovědi znovu kontro
 
 Stop-loss a `target_2` jsou hlídané deterministicky před LLM. `target_1` je informativní;
 první verze neprovádí částečné výstupy. Pokud chybí `OPENAI_API_KEY`, screening může
-proběhnout, ale hlavní GPT portfolio žádný nový obchod neotevře. Čtyři srovnávací PAPER
-strategie pracují deterministicky a fungují i bez OpenAI klíče.
+proběhnout, ale hlavní GPT portfolio žádný nový obchod neotevře. Osm srovnávacích PAPER
+strategií pracuje adaptivně nad technickým základem a funguje i bez OpenAI klíče.
 
 ## Český dashboard a liga strategií
 
 Dvojklik na `AIStockPaperAssistant.exe` otevře lokální UI na
-`http://127.0.0.1:8765`. Dashboard není vystavený do internetu. Obsahuje čtyři účty,
+`http://127.0.0.1:8765`. Dashboard není vystavený do internetu. Obsahuje osm účtů,
 které sdílejí jen validovaná tržní data, ale nikoli peníze nebo pozice:
 
 Stejné lokální API může z tohoto počítače číst soukromá stránka QSO Blogu. CORS je
@@ -81,16 +83,17 @@ omezený proměnnou `DASHBOARD_CORS_ORIGINS`; výchozí produkční origin je
 `https://ok2mkj.vercel.app`. API dál naslouchá jen na loopbacku a není veřejně
 dostupné z internetu.
 
-- **Trend** – vyžaduje rostoucí EMA stack a zdravé momentum;
+- **USA Trend / Evropa Trend** – vyžaduje rostoucí EMA stack a zdravé momentum;
 - **Breakout** – hledá průraz dvacetibarového maxima se zvýšeným volume;
 - **Momentum** – sleduje dvacetibarové momentum, RSI, MACD a relativní volume;
 - **Hybrid** – kombinuje trend s breakout/momentum podmínkou a vyšším skóre.
 
-Každý začíná standardně s 10 000 USD, riskuje nejvýše 0,5 % equity na obchod, nejvýše
+Čtyři USA účty začínají standardně s 10 000 USD a čtyři evropské účty s 10 000 EUR.
+Každý riskuje nejvýše 0,5 % equity na obchod, nejvýše
 2 % celého portfolia a nejvýše 20 % equity v jednom tickeru. Tyto hodnoty lze změnit
 v `.env`. Počáteční kapitál každého agenta lze změnit přímo v UI. Pokud už má agent
 pozice nebo historii, API vyžaduje výslovně potvrzený reset, aby se nic nesmazalo omylem.
-Jde o srovnání adaptivních obchodních strategií, nikoli o čtyři samostatné OpenAI modely.
+Jde o srovnání adaptivních obchodních strategií, nikoli o osm samostatných OpenAI modelů.
 Každý agent má vlastní trvale uložené váhy, historii lekcí a verzi politiky. Výchozí technické
 skóre tvoří 65 % rozhodnutí a naučený profil 35 %. Tvrdé podmínky strategie, stop-loss,
 position sizing a PAPER-only režim se učením nikdy nemění. Váhy jsou omezené na rozsah
@@ -100,6 +103,12 @@ resetuje také naučený profil, ale pouze po výslovném potvrzení.
 Toto je vysvětlitelné online přizpůsobování z uzavřených obchodů, nikoli příslib zisku ani
 nekontrolované „sebeprogramování“. Na začátku pracují agenti s výchozím profilem a statistická
 vypovídací hodnota roste až s počtem uzavřených PAPER obchodů.
+
+Evropské tituly se neobchodují mimo aktivní evropské okno. Jednotlivé burzy mohou mít
+odlišný svátek nebo přerušené obchodování; kontrola čerstvosti OHLCV takový titul bezpečně
+vyřadí. Bezplatný evropský Yahoo feed bývá opožděný přibližně 15–20 minut, proto má
+samostatný maximální limit stáří 30 minut (`EUROPE_MAX_QUOTE_AGE_MINUTES`). USA limit
+zůstává 15 minut. EUR a USD equity se v UI zobrazují odděleně a nesčítají se bez kurzu.
 
 Pro kontejnerové nasazení lze dashboard bezpečně vystavit přes
 `DASHBOARD_HOST=0.0.0.0` pouze tehdy, když je současně nastavený náhodný
@@ -270,7 +279,7 @@ src/stock_assistant/
   news.py          # RSS monitoring, scoring a deduplikace zpráv
   risk.py          # nezávislá validace a position sizing
   paper.py         # pouze SQLite paper broker
-  agent_league.py  # čtyři izolované adaptivní PAPER strategie
+  agent_league.py  # osm regionálně oddělených adaptivních PAPER strategií
   adaptive.py      # rysy, skóre a omezené online učení z výsledků v R
   dashboard.py     # lokální české FastAPI UI/API
   db.py            # SQLite schema, metriky a transakce

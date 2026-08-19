@@ -9,10 +9,14 @@ from stock_assistant.adaptive import FEATURE_NAMES, default_weights
 from stock_assistant.models import Action, NewsArticle, Position, TradeAnalysis, TradeExecution
 
 DEFAULT_AGENTS = (
-    ("trend", "Trend", "TREND"),
-    ("breakout", "Breakout", "BREAKOUT"),
-    ("momentum", "Momentum", "MOMENTUM"),
-    ("hybrid", "Hybrid", "HYBRID"),
+    ("trend", "USA Trend", "TREND", "US", "USD"),
+    ("breakout", "USA Breakout", "BREAKOUT", "US", "USD"),
+    ("momentum", "USA Momentum", "MOMENTUM", "US", "USD"),
+    ("hybrid", "USA Hybrid", "HYBRID", "US", "USD"),
+    ("europe-trend", "Evropa Trend", "TREND", "EU", "EUR"),
+    ("europe-breakout", "Evropa Breakout", "BREAKOUT", "EU", "EUR"),
+    ("europe-momentum", "Evropa Momentum", "MOMENTUM", "EU", "EUR"),
+    ("europe-hybrid", "Evropa Hybrid", "HYBRID", "EU", "EUR"),
 )
 
 SCHEMA = """
@@ -124,6 +128,8 @@ CREATE TABLE IF NOT EXISTS agent_accounts (
     slug TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     strategy TEXT NOT NULL CHECK (strategy IN ('TREND', 'BREAKOUT', 'MOMENTUM', 'HYBRID')),
+    market TEXT NOT NULL DEFAULT 'US' CHECK (market IN ('US', 'EU')),
+    currency TEXT NOT NULL DEFAULT 'USD' CHECK (currency IN ('USD', 'EUR')),
     initial_cash REAL NOT NULL CHECK (initial_cash > 0),
     cash REAL NOT NULL CHECK (cash >= 0),
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
@@ -242,11 +248,13 @@ class Repository:
         initial_cash: float,
         agent_initial_cash: float = 10_000.0,
         agent_min_score: float = 75.0,
+        agent_europe_initial_cash: float = 10_000.0,
     ) -> None:
         self.path = path
         self.initial_cash = initial_cash
         self.agent_initial_cash = agent_initial_cash
         self.agent_min_score = agent_min_score
+        self.agent_europe_initial_cash = agent_europe_initial_cash
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -264,6 +272,18 @@ class Repository:
         with self.connect() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(SCHEMA)
+            account_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(agent_accounts)")
+            }
+            if "market" not in account_columns:
+                connection.execute(
+                    "ALTER TABLE agent_accounts ADD COLUMN market TEXT NOT NULL DEFAULT 'US'"
+                )
+            if "currency" not in account_columns:
+                connection.execute(
+                    "ALTER TABLE agent_accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'"
+                )
             connection.execute(
                 """INSERT OR IGNORE INTO account(id, initial_cash, cash, updated_at)
                    VALUES (1, ?, ?, ?)""",
@@ -272,20 +292,39 @@ class Repository:
             now = _utc_now()
             connection.executemany(
                 """INSERT OR IGNORE INTO agent_accounts
-                   (slug, name, strategy, initial_cash, cash, enabled, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+                   (slug, name, strategy, market, currency, initial_cash, cash,
+                    enabled, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
                 [
                     (
                         slug,
                         name,
                         strategy,
-                        self.agent_initial_cash,
-                        self.agent_initial_cash,
+                        market,
+                        currency,
+                        (
+                            self.agent_initial_cash
+                            if market == "US"
+                            else self.agent_europe_initial_cash
+                        ),
+                        (
+                            self.agent_initial_cash
+                            if market == "US"
+                            else self.agent_europe_initial_cash
+                        ),
                         now,
                         now,
                     )
-                    for slug, name, strategy in DEFAULT_AGENTS
+                    for slug, name, strategy, market, currency in DEFAULT_AGENTS
                 ],
+            )
+            connection.execute(
+                """UPDATE agent_accounts SET market = 'US', currency = 'USD'
+                   WHERE slug IN ('trend', 'breakout', 'momentum', 'hybrid')"""
+            )
+            connection.executemany(
+                "UPDATE agent_accounts SET name = ? WHERE slug = ?",
+                [(name, slug) for slug, name, _strategy, _market, _currency in DEFAULT_AGENTS],
             )
             accounts = connection.execute(
                 "SELECT id, strategy FROM agent_accounts ORDER BY id"
@@ -717,12 +756,31 @@ class Repository:
             )
             connection.commit()
 
-    def get_agent_accounts(self) -> list[dict[str, object]]:
+    def get_agent_accounts(
+        self, market: str | None = None
+    ) -> list[dict[str, object]]:
+        with self.connect() as connection:
+            if market is None:
+                rows = connection.execute(
+                    "SELECT * FROM agent_accounts ORDER BY market DESC, id"
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM agent_accounts WHERE market = ? ORDER BY id",
+                    (market,),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_agent_position_tickers(self, market: str) -> set[str]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM agent_accounts ORDER BY id"
+                """SELECT DISTINCT p.ticker
+                   FROM agent_positions p
+                   JOIN agent_accounts a ON a.id = p.agent_id
+                   WHERE a.market = ?""",
+                (market,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return {str(row["ticker"]) for row in rows}
 
     def get_agent_learning_state(self, agent_id: int) -> dict[str, object]:
         with self.connect() as connection:

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 NASDAQ100_URL = "https://www.nasdaq.com/solutions/global-indexes/nasdaq-100/companies"
+EURO_STOXX50_URL = "https://en.wikipedia.org/wiki/EURO_STOXX_50"
 
 
 class UniverseUnavailable(RuntimeError):
@@ -20,6 +21,10 @@ class UniverseUnavailable(RuntimeError):
 
 def _normalize_symbol(symbol: object) -> str:
     return str(symbol).strip().upper().replace(".", "-")
+
+
+def _normalize_europe_symbol(symbol: object) -> str:
+    return str(symbol).strip().upper().replace(" ", "")
 
 
 class UniverseProvider:
@@ -122,3 +127,61 @@ class UniverseProvider:
             encoding="utf-8",
         )
         temporary.replace(self.cache_path)
+
+
+class EuropeanUniverseProvider(UniverseProvider):
+    """EURO STOXX 50 symbols using Yahoo's exchange suffixes (for example .DE)."""
+
+    def get_symbols(self, override: list[str] | None = None) -> list[str]:
+        if override:
+            return sorted({_normalize_europe_symbol(item) for item in override})
+
+        cache = self._read_cache()
+        if cache and datetime.now(UTC) - cache[0] <= self.cache_ttl:
+            return cache[1]
+
+        try:
+            symbols = self._fetch_all()
+            self._write_cache(symbols)
+            return symbols
+        except Exception as exc:
+            if cache:
+                logger.warning("European universe refresh failed; using stale cache: %s", exc)
+                return cache[1]
+            raise UniverseUnavailable(
+                "cannot load EURO STOXX 50 constituents and no cache exists"
+            ) from exc
+
+    def _fetch_all(self) -> list[str]:
+        html = self._fetch_html(EURO_STOXX50_URL)
+        for table in pd.read_html(StringIO(html)):
+            columns = [str(column).strip() for column in table.columns]
+            if "Ticker" not in columns:
+                continue
+            ticker_column = table.columns[columns.index("Ticker")]
+            symbols = sorted(
+                {
+                    _normalize_europe_symbol(value)
+                    for value in table[ticker_column].dropna()
+                }
+            )
+            if len(symbols) < 45:
+                break
+            logger.info("Loaded EURO STOXX 50 universe: %d tickers", len(symbols))
+            return symbols
+        raise UniverseUnavailable("EURO STOXX 50 ticker table was not found")
+
+    def _read_cache(self) -> tuple[datetime, list[str]] | None:
+        try:
+            payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            fetched_at = datetime.fromisoformat(payload["fetched_at"])
+            if fetched_at.tzinfo is None:
+                fetched_at = fetched_at.replace(tzinfo=UTC)
+            symbols = sorted(
+                {_normalize_europe_symbol(item) for item in payload["symbols"]}
+            )
+            if not symbols:
+                return None
+            return fetched_at.astimezone(UTC), symbols
+        except (OSError, ValueError, KeyError, TypeError):
+            return None

@@ -15,20 +15,30 @@ from stock_assistant.news import NewsProvider
 from stock_assistant.paper import PaperBroker
 from stock_assistant.screening import DeterministicScreener, data_is_valid
 from stock_assistant.telegram import TelegramNotifier
-from stock_assistant.universe import UniverseProvider
+from stock_assistant.universe import EuropeanUniverseProvider, UniverseProvider
 
 logger = logging.getLogger(__name__)
 
 
-def nyse_is_open(now: datetime | None = None) -> bool:
+def market_is_open(calendar_name: str, now: datetime | None = None) -> bool:
     now = (now or datetime.now(UTC)).astimezone(UTC)
-    calendar = mcal.get_calendar("NYSE")
+    calendar = mcal.get_calendar(calendar_name)
     schedule = calendar.schedule(start_date=now.date(), end_date=now.date())
     if schedule.empty:
         return False
     market_open = schedule.iloc[0]["market_open"].to_pydatetime()
     market_close = schedule.iloc[0]["market_close"].to_pydatetime()
     return market_open <= now <= market_close
+
+
+def nyse_is_open(now: datetime | None = None) -> bool:
+    return market_is_open("NYSE", now)
+
+
+def europe_is_open(now: datetime | None = None) -> bool:
+    # EURO STOXX 50 venues overlap the Xetra 09:00-17:30 Europe/Prague window.
+    # Missing venue-specific bars still fail normal freshness validation.
+    return market_is_open("XETR", now)
 
 
 class TradingCycle:
@@ -38,6 +48,7 @@ class TradingCycle:
         settings: Settings,
         repository: Repository,
         universe: UniverseProvider,
+        europe_universe: EuropeanUniverseProvider | None = None,
         market_data: YahooMarketDataProvider,
         screener: DeterministicScreener,
         analyzer: Analyzer,
@@ -50,6 +61,7 @@ class TradingCycle:
         self.settings = settings
         self.repository = repository
         self.universe = universe
+        self.europe_universe = europe_universe
         self.market_data = market_data
         self.screener = screener
         self.analyzer = analyzer
@@ -64,16 +76,57 @@ class TradingCycle:
         universe_count = valid_count = screened_count = llm_count = 0
         try:
             cycle_now = self.clock()
-            if not self.settings.run_outside_market_hours and not nyse_is_open(cycle_now):
-                logger.info("US equity market is closed; cycle skipped")
+            us_open = self.settings.run_outside_market_hours or nyse_is_open(cycle_now)
+            europe_open = self.europe_universe is not None and (
+                self.settings.run_outside_market_hours or europe_is_open(cycle_now)
+            )
+            if not us_open and not europe_open:
+                logger.info("US and European equity markets are closed; cycle skipped")
                 self.repository.finish_cycle(cycle_id, status="SKIPPED_MARKET_CLOSED")
                 return
 
-            symbols = self.universe.get_symbols(self.settings.override_symbols)
-            positions = self.repository.get_positions()
-            symbols = sorted(set(symbols) | set(positions))
+            positions = self.repository.get_positions() if us_open else {}
+            us_symbols: set[str] = set()
+            europe_symbols: set[str] = set()
+            if us_open:
+                try:
+                    us_symbols = set(
+                        self.universe.get_symbols(self.settings.override_symbols)
+                    )
+                    us_symbols.update(positions)
+                    us_symbols.update(self.repository.get_agent_position_tickers("US"))
+                except Exception as exc:
+                    logger.error(
+                        "US universe unavailable; region skipped error_type=%s",
+                        type(exc).__name__,
+                    )
+            if europe_open and self.europe_universe is not None:
+                try:
+                    europe_symbols = set(
+                        self.europe_universe.get_symbols(
+                            self.settings.europe_override_symbols
+                        )
+                    )
+                    europe_symbols.update(
+                        self.repository.get_agent_position_tickers("EU")
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "European universe unavailable; region skipped error_type=%s",
+                        type(exc).__name__,
+                    )
+
+            symbols = sorted(us_symbols | europe_symbols)
+            if not symbols:
+                raise RuntimeError("no market universe is available for an open region")
             universe_count = len(symbols)
-            logger.info("Cycle %d downloading %d symbols", cycle_id, universe_count)
+            logger.info(
+                "Cycle %d downloading %d symbols (US=%d EU=%d)",
+                cycle_id,
+                universe_count,
+                len(us_symbols),
+                len(europe_symbols),
+            )
             frames = self.market_data.fetch(symbols)
 
             snapshots = {}
@@ -84,7 +137,11 @@ class TradingCycle:
                     valid, reason = data_is_valid(
                         snapshot,
                         now=validation_now,
-                        max_age_minutes=self.settings.max_quote_age_minutes,
+                        max_age_minutes=(
+                            self.settings.europe_max_quote_age_minutes
+                            if ticker in europe_symbols
+                            else self.settings.max_quote_age_minutes
+                        ),
                     )
                     if not valid:
                         logger.debug("Rejected %s data: %s", ticker, reason)
@@ -93,9 +150,37 @@ class TradingCycle:
                 except (InvalidMarketData, ValueError) as exc:
                     logger.debug("Rejected %s data: %s", ticker, exc)
             valid_count = len(snapshots)
-            prices = {ticker: snapshot.current_price for ticker, snapshot in snapshots.items()}
+            us_snapshots = {
+                ticker: snapshot
+                for ticker, snapshot in snapshots.items()
+                if ticker in us_symbols
+            }
+            europe_snapshots = {
+                ticker: snapshot
+                for ticker, snapshot in snapshots.items()
+                if ticker in europe_symbols
+            }
             if self.agent_league is not None:
-                self.agent_league.process(snapshots)
+                if us_snapshots:
+                    self.agent_league.process(us_snapshots, market="US")
+                if europe_snapshots:
+                    self.agent_league.process(europe_snapshots, market="EU")
+
+            if not us_open or not us_snapshots:
+                self.repository.finish_cycle(
+                    cycle_id,
+                    status="SUCCESS",
+                    universe_count=universe_count,
+                    valid_count=valid_count,
+                    screened_count=0,
+                    llm_count=0,
+                )
+                return
+
+            snapshots = us_snapshots
+            prices = {
+                ticker: snapshot.current_price for ticker, snapshot in snapshots.items()
+            }
 
             # Hard exits run before the LLM, using only validated authoritative prices.
             exited_tickers: set[str] = set()

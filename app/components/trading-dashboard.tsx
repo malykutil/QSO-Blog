@@ -8,11 +8,21 @@ import {
   type TradingDashboardPayload,
 } from "@/src/lib/trading-types";
 
-const money = new Intl.NumberFormat("cs-CZ", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+const moneyFormatters = {
+  USD: new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }),
+  EUR: new Intl.NumberFormat("cs-CZ", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }),
+};
+function money(value: number, currency: "USD" | "EUR") {
+  return moneyFormatters[currency].format(value);
+}
 const decimal = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 });
 const accents = ["#22c55e", "#0ea5e9", "#f59e0b", "#8b5cf6"];
 const localAssistantUrl = "http://127.0.0.1:8765";
@@ -42,7 +52,7 @@ async function fetchDashboard(url: string) {
 function cycleStatusLabel(status: string | undefined) {
   if (!status) return "čeká na první kontrolu";
   if (status === "SKIPPED_MARKET_CLOSED") return "americký trh je zavřený";
-  if (status === "COMPLETED") return "poslední kontrola proběhla úspěšně";
+  if (status === "COMPLETED" || status === "SUCCESS") return "poslední kontrola proběhla úspěšně";
   if (status === "RUNNING") return "právě kontroluje trh";
   if (status === "FAILED") return "poslední kontrola skončila chybou";
   return status.toLocaleLowerCase("cs-CZ").replaceAll("_", " ");
@@ -197,7 +207,7 @@ function LearningPanel({ agent }: { agent: TradingAgent }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <strong className="text-slate-950">{lesson.ticker} · v{lesson.policy_version}</strong>
                   <span className={`text-sm font-semibold ${valueTone(lesson.reward_r)}`}>
-                    {lesson.reward_r >= 0 ? "+" : ""}{decimal.format(lesson.reward_r)} R · {money.format(lesson.realized_pnl)}
+                    {lesson.reward_r >= 0 ? "+" : ""}{decimal.format(lesson.reward_r)} R · {money(lesson.realized_pnl, agent.currency)}
                   </span>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{lesson.lesson}</p>
@@ -265,7 +275,12 @@ export function TradingDashboard() {
     [data],
   );
   const selectedAgent = ranked.find((agent) => agent.id === selectedAgentId) ?? ranked[0] ?? null;
-  const leagueEquity = ranked.reduce((sum, agent) => sum + agent.equity, 0);
+  const usLeagueEquity = ranked
+    .filter((agent) => agent.market === "US")
+    .reduce((sum, agent) => sum + agent.equity, 0);
+  const euLeagueEquity = ranked
+    .filter((agent) => agent.market === "EU")
+    .reduce((sum, agent) => sum + agent.equity, 0);
   const openPositions = ranked.reduce((sum, agent) => sum + agent.open_positions.length, 0);
   const lastCycle = data?.engine.last_cycle ?? null;
 
@@ -310,13 +325,14 @@ export function TradingDashboard() {
             </div>
             <h1 className="mt-4 font-display text-4xl leading-tight sm:text-6xl">AI Trading League</h1>
             <p className="mt-4 max-w-2xl leading-7 text-slate-300">
-              Čtyři oddělené strategie nad stejnými validovanými tržními daty. Žádný účet nemůže zadat obchod se skutečnými penězi.
+              Osm oddělených adaptivních strategií pro USA a EURO STOXX 50. Žádný účet nemůže zadat obchod se skutečnými penězi.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
-              <p className="text-xs text-slate-400">Equity ligy</p>
-              <p className="mt-2 text-2xl font-semibold">{money.format(leagueEquity)}</p>
+              <p className="text-xs text-slate-400">Equity USA / Evropa</p>
+              <p className="mt-2 text-lg font-semibold">{money(usLeagueEquity, "USD")}</p>
+              <p className="text-lg font-semibold">{money(euLeagueEquity, "EUR")}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4">
               <p className="text-xs text-slate-400">Nejlepší agent</p>
@@ -333,9 +349,9 @@ export function TradingDashboard() {
       {data ? (
         <div className="flex flex-col gap-2 rounded-[1.5rem] border border-emerald-300/50 bg-emerald-50 px-5 py-4 text-emerald-950 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-semibold">Python PAPER engine je online · živá OHLCV data po 5 minutách</p>
+            <p className="font-semibold">Python PAPER engine je online · OHLCV data po 5 minutách</p>
             <p className="mt-1 text-sm text-emerald-800">
-              {dataSource === "local" ? "Běží automaticky na tomto počítači" : "Běží v cloudu"} · Yahoo Finance · {cycleStatusLabel(lastCycle?.status)}
+              {dataSource === "local" ? "Běží automaticky na tomto počítači" : "Běží v cloudu"} · USA max. 15 min · Evropa zpoždění cca 15–20 min · {cycleStatusLabel(lastCycle?.status)}
             </p>
           </div>
           <p className="text-sm text-emerald-800">
@@ -365,7 +381,9 @@ export function TradingDashboard() {
                 <span className="absolute inset-y-0 left-0 w-1" style={{ background: accents[index % accents.length] }} />
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[11px] font-bold tracking-[0.2em] text-slate-500">{agent.strategy}</p>
+                    <p className="text-[11px] font-bold tracking-[0.2em] text-slate-500">
+                      {agent.market === "US" ? "USA" : "EVROPA"} · {agent.strategy}
+                    </p>
                     <h2 className="mt-1 text-xl font-semibold text-slate-950">{agent.name}</h2>
                   </div>
                   <span className="text-sm text-slate-500">#{index + 1}</span>
@@ -373,12 +391,12 @@ export function TradingDashboard() {
                 <p className="mt-4 inline-flex rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
                   Učení v{agent.learning.policy_version} · {agent.learning.trades_learned} obchodů
                 </p>
-                <p className="mt-7 text-3xl font-semibold tracking-tight text-slate-950">{money.format(agent.equity)}</p>
+                <p className="mt-7 text-3xl font-semibold tracking-tight text-slate-950">{money(agent.equity, agent.currency)}</p>
                 <p className={`mt-1 text-sm font-semibold ${valueTone(agent.total_return_percent)}`}>
                   {signedPercent(agent.total_return_percent)} od startu
                 </p>
                 <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
-                  <div><dt className="text-slate-500">Hotovost</dt><dd className="mt-1 font-semibold text-slate-950">{money.format(agent.cash)}</dd></div>
+                  <div><dt className="text-slate-500">Hotovost</dt><dd className="mt-1 font-semibold text-slate-950">{money(agent.cash, agent.currency)}</dd></div>
                   <div><dt className="text-slate-500">Pozice</dt><dd className="mt-1 font-semibold text-slate-950">{agent.open_positions.length}</dd></div>
                   <div><dt className="text-slate-500">Win rate</dt><dd className="mt-1 font-semibold text-slate-950">{decimal.format(agent.win_rate)} %</dd></div>
                   <div><dt className="text-slate-500">Drawdown</dt><dd className="mt-1 font-semibold text-rose-600">{decimal.format(agent.max_drawdown_percent)} %</dd></div>
@@ -409,7 +427,7 @@ export function TradingDashboard() {
                     <thead className="text-xs uppercase tracking-wider text-slate-500"><tr><th className="py-3">#</th><th>Agent</th><th>Equity</th><th>Výnos</th><th>Win rate</th><th>Profit factor</th></tr></thead>
                     <tbody>
                       {ranked.map((agent, index) => (
-                        <tr key={agent.id} className="border-t border-slate-900/8"><td className="py-4">#{index + 1}</td><td className="font-semibold">{agent.name}</td><td>{money.format(agent.equity)}</td><td className={valueTone(agent.total_return_percent)}>{signedPercent(agent.total_return_percent)}</td><td>{decimal.format(agent.win_rate)} %</td><td>{agent.profit_factor === null ? "—" : decimal.format(agent.profit_factor)}</td></tr>
+                        <tr key={agent.id} className="border-t border-slate-900/8"><td className="py-4">#{index + 1}</td><td className="font-semibold">{agent.name}</td><td>{money(agent.equity, agent.currency)}</td><td className={valueTone(agent.total_return_percent)}>{signedPercent(agent.total_return_percent)}</td><td>{decimal.format(agent.win_rate)} %</td><td>{agent.profit_factor === null ? "—" : decimal.format(agent.profit_factor)}</td></tr>
                       ))}
                     </tbody>
                   </table>
@@ -424,7 +442,7 @@ export function TradingDashboard() {
                     const pnl = (position.current_price - position.entry_price) * position.quantity;
                     return (
                       <article key={position.ticker} className="rounded-2xl border border-slate-900/8 bg-white/80 p-4">
-                        <div className="flex items-center justify-between gap-3"><strong className="text-slate-950">{position.ticker}</strong><span className={`font-semibold ${valueTone(pnl)}`}>{pnl >= 0 ? "+" : ""}{money.format(pnl)}</span></div>
+                        <div className="flex items-center justify-between gap-3"><strong className="text-slate-950">{position.ticker}</strong><span className={`font-semibold ${valueTone(pnl)}`}>{pnl >= 0 ? "+" : ""}{money(pnl, selectedAgent.currency)}</span></div>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{position.quantity} ks · vstup {decimal.format(position.entry_price)} · nyní {decimal.format(position.current_price)}</p>
                         <p className="text-sm leading-6 text-slate-600">SL {decimal.format(position.stop_loss)} · T1 {decimal.format(position.target_1)} · T2 {decimal.format(position.target_2)}</p>
                       </article>
@@ -459,7 +477,7 @@ export function TradingDashboard() {
           <div className="w-full max-w-md rounded-[1.8rem] bg-white p-6 shadow-2xl dark:bg-slate-900">
             <p className="text-xs uppercase tracking-[0.25em] text-emerald-600">Nastavení PAPER účtu</p>
             <h2 id="capital-title" className="mt-2 text-2xl font-semibold text-slate-950">Kapitál · {capitalAgent.name}</h2>
-            <label className="mt-6 block text-sm font-semibold text-slate-700">Počáteční kapitál v USD
+            <label className="mt-6 block text-sm font-semibold text-slate-700">Počáteční kapitál v {capitalAgent.currency}
               <input type="number" min={100} max={1_000_000_000} step={100} value={capital} onChange={(event) => setCapital(Number(event.target.value))} className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3" />
             </label>
             <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-600">
