@@ -73,6 +73,11 @@ Dvojklik na `AIStockPaperAssistant.exe` otevře lokální UI na
 `http://127.0.0.1:8765`. Dashboard není vystavený do internetu. Obsahuje čtyři účty,
 které sdílejí jen validovaná tržní data, ale nikoli peníze nebo pozice:
 
+Stejné lokální API může z tohoto počítače číst soukromá stránka QSO Blogu. CORS je
+omezený proměnnou `DASHBOARD_CORS_ORIGINS`; výchozí produkční origin je
+`https://ok2mkj.vercel.app`. API dál naslouchá jen na loopbacku a není veřejně
+dostupné z internetu.
+
 - **Trend** – vyžaduje rostoucí EMA stack a zdravé momentum;
 - **Breakout** – hledá průraz dvacetibarového maxima se zvýšeným volume;
 - **Momentum** – sleduje dvacetibarové momentum, RSI, MACD a relativní volume;

@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { TradingAgent, TradingDashboardPayload } from "@/src/lib/trading-types";
+import {
+  isTradingDashboardPayload,
+  type TradingAgent,
+  type TradingDashboardPayload,
+} from "@/src/lib/trading-types";
 
 const money = new Intl.NumberFormat("cs-CZ", {
   style: "currency",
@@ -11,6 +15,34 @@ const money = new Intl.NumberFormat("cs-CZ", {
 });
 const decimal = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 1 });
 const accents = ["#22c55e", "#0ea5e9", "#f59e0b", "#8b5cf6"];
+const localAssistantUrl = "http://127.0.0.1:8765";
+
+type DashboardSource = "cloud" | "local";
+
+async function fetchDashboard(url: string) {
+  const response = await fetch(url, { cache: "no-store", credentials: "omit" });
+  const payload = (await response.json().catch(() => null)) as unknown;
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "Trading přehled se nepodařilo načíst.";
+    throw new Error(message);
+  }
+  if (!isTradingDashboardPayload(payload)) {
+    throw new Error("Trading služba vrátila neplatná nebo neúplná data.");
+  }
+  return payload;
+}
+
+function cycleStatusLabel(status: string | undefined) {
+  if (!status) return "čeká na první kontrolu";
+  if (status === "SKIPPED_MARKET_CLOSED") return "americký trh je zavřený";
+  if (status === "COMPLETED") return "poslední kontrola proběhla úspěšně";
+  if (status === "RUNNING") return "právě kontroluje trh";
+  if (status === "FAILED") return "poslední kontrola skončila chybou";
+  return status.toLocaleLowerCase("cs-CZ").replaceAll("_", " ");
+}
 
 function signedPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${decimal.format(value)} %`;
@@ -90,17 +122,28 @@ export function TradingDashboard() {
   const [capital, setCapital] = useState(10_000);
   const [resetHistory, setResetHistory] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dataSource, setDataSource] = useState<DashboardSource | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/trading/dashboard", { cache: "no-store" });
-      const payload = (await response.json().catch(() => null)) as TradingDashboardPayload & { error?: string };
-      if (!response.ok) throw new Error(payload?.error || "Trading přehled se nepodařilo načíst.");
+      let payload: TradingDashboardPayload;
+      let source: DashboardSource = "cloud";
+      try {
+        payload = await fetchDashboard("/api/trading/dashboard");
+      } catch {
+        payload = await fetchDashboard(`${localAssistantUrl}/api/dashboard`);
+        source = "local";
+      }
       setData(payload);
+      setDataSource(source);
       setError(null);
       setSelectedAgentId((current) => current ?? payload.agents[0]?.id ?? null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Trading přehled není dostupný.");
+      setError(
+        loadError instanceof Error
+          ? `${loadError.message} Zkontrolujte, že na tomto počítači běží AIStockPaperAssistant.`
+          : "Trading přehled není dostupný.",
+      );
     } finally {
       setLoading(false);
     }
@@ -119,6 +162,7 @@ export function TradingDashboard() {
   const selectedAgent = ranked.find((agent) => agent.id === selectedAgentId) ?? ranked[0] ?? null;
   const leagueEquity = ranked.reduce((sum, agent) => sum + agent.equity, 0);
   const openPositions = ranked.reduce((sum, agent) => sum + agent.open_positions.length, 0);
+  const lastCycle = data?.engine.last_cycle ?? null;
 
   const openCapital = (agent: TradingAgent) => {
     setCapitalAgent(agent);
@@ -130,13 +174,17 @@ export function TradingDashboard() {
     if (!capitalAgent) return;
     setSaving(true);
     try {
-      const response = await fetch(`/api/trading/agents/${capitalAgent.id}/capital`, {
+      const capitalUrl = dataSource === "local"
+        ? `${localAssistantUrl}/api/agents/${capitalAgent.id}/capital`
+        : `/api/trading/agents/${capitalAgent.id}/capital`;
+      const response = await fetch(capitalUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "omit",
         body: JSON.stringify({ capital, reset_history: resetHistory }),
       });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(payload?.error || "Kapitál se nepodařilo uložit.");
+      const payload = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || payload?.detail || "Kapitál se nepodařilo uložit.");
       setCapitalAgent(null);
       await load();
     } catch (saveError) {
@@ -176,6 +224,20 @@ export function TradingDashboard() {
           </div>
         </div>
       </section>
+
+      {data ? (
+        <div className="flex flex-col gap-2 rounded-[1.5rem] border border-emerald-300/50 bg-emerald-50 px-5 py-4 text-emerald-950 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold">Python PAPER engine je online · živá OHLCV data po 5 minutách</p>
+            <p className="mt-1 text-sm text-emerald-800">
+              {dataSource === "local" ? "Běží automaticky na tomto počítači" : "Běží v cloudu"} · Yahoo Finance · {cycleStatusLabel(lastCycle?.status)}
+            </p>
+          </div>
+          <p className="text-sm text-emerald-800">
+            {lastCycle?.finished_at ? `Poslední cyklus ${new Date(lastCycle.finished_at).toLocaleString("cs-CZ")}` : "Připraveno k prvnímu cyklu"}
+          </p>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="flex flex-col gap-3 rounded-[1.5rem] border border-rose-300/40 bg-rose-50 px-5 py-4 text-rose-950 sm:flex-row sm:items-center sm:justify-between">

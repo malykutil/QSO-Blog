@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +27,15 @@ def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+    )
+    allowed_origins = settings.dashboard_allowed_origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "PUT", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        allow_private_network=True,
     )
     index_path = Path(__file__).resolve().parent / "web" / "index.html"
 
@@ -50,10 +60,16 @@ def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
         recent_news = [
             article.model_dump(mode="json") for article in repository.recent_news(limit=8)
         ]
+        latest_cycle = repository.latest_cycle()
         return {
             "mode": settings.trading_mode.upper(),
             "scanner_interval_minutes": 5,
             "server_time": datetime.now(UTC).isoformat(),
+            "engine": {
+                "data_source": "Yahoo Finance OHLCV",
+                "interval": settings.market_data_interval,
+                "last_cycle": latest_cycle,
+            },
             "main_account": main_account,
             "agents": agents,
             "recent_news": recent_news,

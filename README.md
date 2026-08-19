@@ -12,6 +12,12 @@ Trading engine je v `services/stock-assistant` a podporuje pouze PAPER režim.
 SQLite diskem. Veřejné API této služby vyžaduje Bearer token; bez tokenu lze volat
 jen minimální healthcheck.
 
+Dokud není cloudová služba připojená, klientský dashboard bezpečně použije lokální
+Windows engine na `http://127.0.0.1:8765`. Lokální API povoluje browser bridge pouze
+z produkčního originu `https://ok2mkj.vercel.app` a z vývojového localhostu. Web tak
+zobrazuje skutečný stav stejné SQLite PAPER simulace a živá 5minutová Yahoo Finance
+OHLCV data, pokud na počítači běží `AIStockPaperAssistant.exe serve`.
+
 V prostředí webu na Vercelu nastavte:
 
 ```text

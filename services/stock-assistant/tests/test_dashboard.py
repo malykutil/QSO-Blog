@@ -33,8 +33,33 @@ def test_czech_dashboard_and_api_are_available(tmp_path):
     assert "Čtyři strategie" in page.text
     assert payload.status_code == 200
     assert payload.json()["mode"] == "PAPER"
+    assert payload.json()["engine"]["data_source"] == "Yahoo Finance OHLCV"
+    assert payload.json()["engine"]["interval"] == "5m"
     assert len(payload.json()["agents"]) == 4
     assert health.json() == {"ok": True, "mode": "PAPER"}
+
+
+def test_dashboard_allows_private_browser_bridge_only_for_configured_origin(tmp_path):
+    client, _, _ = make_client(tmp_path)
+    allowed_origin = "https://ok2mkj.vercel.app"
+
+    response = client.get("/api/dashboard", headers={"Origin": allowed_origin})
+    rejected = client.get(
+        "/api/dashboard", headers={"Origin": "https://example.invalid"}
+    )
+    preflight = client.options(
+        "/api/dashboard",
+        headers={
+            "Origin": allowed_origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Private-Network": "true",
+        },
+    )
+
+    assert response.headers["access-control-allow-origin"] == allowed_origin
+    assert "access-control-allow-origin" not in rejected.headers
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-private-network"] == "true"
 
 
 def test_capital_api_refuses_silent_history_deletion(tmp_path, snapshot):

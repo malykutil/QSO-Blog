@@ -47,10 +47,29 @@ export type TradingNews = {
   sentiment: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
 };
 
+export type TradingCycleState = {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  universe_count: number;
+  valid_count: number;
+  screened_count: number;
+  llm_count: number;
+  error: string | null;
+};
+
+export type TradingEngineState = {
+  data_source: "Yahoo Finance OHLCV";
+  interval: "5m";
+  last_cycle: TradingCycleState | null;
+};
+
 export type TradingDashboardPayload = {
   mode: "PAPER";
   scanner_interval_minutes: number;
   server_time: string;
+  engine: TradingEngineState;
   agents: TradingAgent[];
   recent_news: TradingNews[];
 };
@@ -85,9 +104,17 @@ function isAgent(value: unknown): value is TradingAgent {
 
 export function isTradingDashboardPayload(value: unknown): value is TradingDashboardPayload {
   if (!isRecord(value) || value.mode !== "PAPER") return false;
+  const engine = value.engine;
   return (
     isFiniteNumber(value.scanner_interval_minutes) &&
     typeof value.server_time === "string" &&
+    isRecord(engine) &&
+    engine.data_source === "Yahoo Finance OHLCV" &&
+    engine.interval === "5m" &&
+    (engine.last_cycle === null ||
+      (isRecord(engine.last_cycle) &&
+        typeof engine.last_cycle.status === "string" &&
+        typeof engine.last_cycle.started_at === "string")) &&
     Array.isArray(value.agents) &&
     value.agents.length === 4 &&
     value.agents.every(isAgent) &&

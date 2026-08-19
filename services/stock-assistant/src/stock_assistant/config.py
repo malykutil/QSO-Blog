@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = Field(default=8765, ge=1024, le=65535)
     dashboard_api_token: str | None = Field(default=None, min_length=32)
+    dashboard_cors_origins: str = (
+        "https://ok2mkj.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+    )
     max_risk_per_trade: float = Field(default=0.01, gt=0, le=0.01)
     min_risk_reward: float = Field(default=2.5, ge=2.5)
     max_llm_candidates: int = Field(default=15, ge=1, le=100)
@@ -86,6 +89,16 @@ class Settings(BaseSettings):
         if not self.universe_override:
             return None
         return sorted({item.strip().upper() for item in self.universe_override.split(",") if item})
+
+    @property
+    def dashboard_allowed_origins(self) -> list[str]:
+        return sorted(
+            {
+                item.strip().rstrip("/")
+                for item in self.dashboard_cors_origins.split(",")
+                if item.strip()
+            }
+        )
 
     def ensure_directories(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)

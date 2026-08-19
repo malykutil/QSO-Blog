@@ -598,6 +598,15 @@ class Repository:
             )
             connection.commit()
 
+    def latest_cycle(self) -> dict[str, object] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT id, started_at, finished_at, status, universe_count,
+                          valid_count, screened_count, llm_count, error
+                   FROM cycle_runs ORDER BY id DESC LIMIT 1"""
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def dump_account(self) -> dict[str, object]:
         with self.connect() as connection:
             account = dict(connection.execute("SELECT * FROM account WHERE id = 1").fetchone())
