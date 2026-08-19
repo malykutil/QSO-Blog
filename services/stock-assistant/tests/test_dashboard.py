@@ -80,7 +80,14 @@ def test_dashboard_allows_private_browser_bridge_only_for_configured_origin(tmp_
 def test_capital_api_refuses_silent_history_deletion(tmp_path, snapshot):
     client, repository, settings = make_client(tmp_path)
     AgentLeague(repository, settings).process({snapshot.ticker: snapshot})
+    repository.save_instrument_names({snapshot.ticker: "Test Corporation"})
     agent_id = int(repository.get_agent_accounts("US")[0]["id"])
+
+    dashboard = client.get("/api/dashboard").json()
+    named_position = next(agent for agent in dashboard["agents"] if agent["id"] == agent_id)[
+        "open_positions"
+    ][0]
+    assert named_position["company_name"] == "Test Corporation"
 
     rejected = client.put(
         f"/api/agents/{agent_id}/capital",

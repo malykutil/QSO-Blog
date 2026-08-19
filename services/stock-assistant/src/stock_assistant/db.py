@@ -204,6 +204,12 @@ CREATE TABLE IF NOT EXISTS agent_learning_state (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS instrument_names (
+    ticker TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_trade_context (
     agent_id INTEGER NOT NULL REFERENCES agent_accounts(id) ON DELETE CASCADE,
     ticker TEXT NOT NULL,
@@ -783,6 +789,37 @@ class Repository:
             )
             connection.commit()
 
+    def missing_instrument_names(self, tickers: set[str]) -> list[str]:
+        if not tickers:
+            return []
+        placeholders = ",".join("?" for _ in tickers)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"SELECT ticker FROM instrument_names WHERE ticker IN ({placeholders})",
+                sorted(tickers),
+            ).fetchall()
+        known = {str(row["ticker"]) for row in rows}
+        return sorted(tickers - known)
+
+    def save_instrument_names(self, names: dict[str, str]) -> None:
+        rows = [
+            (ticker, name.strip()[:200], _utc_now())
+            for ticker, name in names.items()
+            if ticker and name.strip()
+        ]
+        if not rows:
+            return
+        with self.connect() as connection:
+            connection.executemany(
+                """INSERT INTO instrument_names(ticker, name, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(ticker) DO UPDATE SET
+                       name = excluded.name,
+                       updated_at = excluded.updated_at""",
+                rows,
+            )
+            connection.commit()
+
     def get_agent_accounts(
         self, market: str | None = None
     ) -> list[dict[str, object]]:
@@ -839,10 +876,12 @@ class Repository:
     def get_agent_positions(self, agent_id: int) -> list[dict[str, object]]:
         with self.connect() as connection:
             rows = connection.execute(
-                """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price,
+                """SELECT p.*, COALESCE(n.name, p.ticker) AS company_name,
+                          COALESCE(q.price, p.entry_price) AS current_price,
                           q.source_timestamp
                    FROM agent_positions p
                    LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                   LEFT JOIN instrument_names n ON n.ticker = p.ticker
                    WHERE p.agent_id = ? ORDER BY p.ticker""",
                 (agent_id,),
             ).fetchall()
@@ -856,9 +895,11 @@ class Repository:
             if account_row is None:
                 raise ValueError("agent neexistuje")
             positions = connection.execute(
-                """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price
+                """SELECT p.*, COALESCE(n.name, p.ticker) AS company_name,
+                          COALESCE(q.price, p.entry_price) AS current_price
                    FROM agent_positions p
                    LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                   LEFT JOIN instrument_names n ON n.ticker = p.ticker
                    WHERE p.agent_id = ?""",
                 (agent_id,),
             ).fetchall()
@@ -1229,9 +1270,11 @@ class Repository:
             for account_row in accounts:
                 agent_id = int(account_row["id"])
                 positions = connection.execute(
-                    """SELECT p.*, COALESCE(q.price, p.entry_price) AS current_price
+                    """SELECT p.*, COALESCE(n.name, p.ticker) AS company_name,
+                              COALESCE(q.price, p.entry_price) AS current_price
                        FROM agent_positions p
                        LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                       LEFT JOIN instrument_names n ON n.ticker = p.ticker
                        WHERE p.agent_id = ? ORDER BY p.ticker""",
                     (agent_id,),
                 ).fetchall()

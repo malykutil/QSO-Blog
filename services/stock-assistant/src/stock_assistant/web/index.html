@@ -204,7 +204,7 @@
       if (!agent.open_positions.length) { box.append(el('div', 'empty', 'Agent zatím nemá otevřenou pozici.')); return; }
       agent.open_positions.forEach(position => {
         const pnl = (position.current_price - position.entry_price) * position.quantity;
-        const item = el('div', 'position'); const top = el('div', 'position-top'); top.append(el('span', '', position.ticker), el('span', tone(pnl), `${pnl >= 0 ? '+' : ''}${money(pnl, agent.currency)}`));
+        const item = el('div', 'position'); const top = el('div', 'position-top'); const identity = el('span'); identity.append(el('span', '', position.company_name), el('span', 'position-meta', position.ticker)); top.append(identity, el('span', tone(pnl), `${pnl >= 0 ? '+' : ''}${money(pnl, agent.currency)}`));
         item.append(top, el('div', 'position-meta', `${position.quantity} ks · vstup ${number.format(position.entry_price)} · nyní ${number.format(position.current_price)} · SL ${number.format(position.stop_loss)} · T2 ${number.format(position.target_2)}`)); box.append(item);
       });
     }

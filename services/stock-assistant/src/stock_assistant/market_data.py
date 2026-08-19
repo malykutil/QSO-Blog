@@ -1,7 +1,10 @@
 import logging
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
 import pandas as pd
+import requests
 import yfinance as yf
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -30,6 +33,45 @@ class YahooMarketDataProvider:
             except Exception:
                 logger.exception("Market data batch failed (%s ...)", ",".join(batch[:3]))
         return frames
+
+    def fetch_names(self, symbols: list[str]) -> dict[str, str]:
+        """Resolve display names only for uncached held symbols."""
+        unique = sorted(set(symbols))
+        if not unique:
+            return {}
+        with ThreadPoolExecutor(max_workers=min(5, len(unique))) as executor:
+            results = executor.map(self._fetch_name, unique)
+        return {
+            symbol: name
+            for symbol, name in zip(unique, results, strict=True)
+            if name is not None
+        }
+
+    @staticmethod
+    def _fetch_name(symbol: str) -> str | None:
+        try:
+            response = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+                params={"range": "1d", "interval": "1d"},
+                timeout=15,
+                headers={"User-Agent": "ai-stock-paper-assistant/0.1"},
+            )
+            response.raise_for_status()
+            result = response.json().get("chart", {}).get("result") or []
+            if not result:
+                return None
+            meta = result[0].get("meta") or {}
+            name = meta.get("longName") or meta.get("shortName")
+            if not isinstance(name, str) or not name.strip():
+                return None
+            return name.strip()[:200]
+        except Exception as exc:
+            logger.warning(
+                "Company name lookup failed ticker=%s error_type=%s",
+                symbol,
+                type(exc).__name__,
+            )
+            return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
     def _download(self, symbols: list[str]) -> pd.DataFrame:

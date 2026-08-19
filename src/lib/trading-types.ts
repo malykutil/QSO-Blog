@@ -1,5 +1,6 @@
 export type TradingPosition = {
   ticker: string;
+  company_name: string;
   quantity: number;
   entry_price: number;
   stop_loss: number;
@@ -177,6 +178,13 @@ function isAgent(value: unknown): value is TradingAgent {
     isFiniteNumber(value.max_drawdown_percent) &&
     Array.isArray(value.open_positions) &&
     value.open_positions.length <= 50 &&
+    value.open_positions.every(
+      (position) =>
+        isRecord(position) &&
+        typeof position.ticker === "string" &&
+        typeof position.company_name === "string" &&
+        isFiniteNumber(position.current_price),
+    ) &&
     Array.isArray(value.equity_curve) &&
     value.equity_curve.length <= 200 &&
     validLearning

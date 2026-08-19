@@ -153,6 +153,20 @@ class TradingCycle:
                     self.agent_league.process(us_snapshots, market="US")
                 if europe_snapshots:
                     self.agent_league.process(europe_snapshots, market="EU")
+                try:
+                    held_tickers = self.repository.get_agent_position_tickers(
+                        "US"
+                    ) | self.repository.get_agent_position_tickers("EU")
+                    missing_names = self.repository.missing_instrument_names(held_tickers)
+                    if missing_names:
+                        self.repository.save_instrument_names(
+                            self.market_data.fetch_names(missing_names)
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Company name enrichment failed safely error_type=%s",
+                        type(exc).__name__,
+                    )
 
             if not us_open or not us_snapshots:
                 self.repository.finish_cycle(

@@ -500,7 +500,13 @@ export function TradingDashboard() {
                     const pnl = (position.current_price - position.entry_price) * position.quantity;
                     return (
                       <article key={position.ticker} className="rounded-2xl border border-slate-900/8 bg-white/80 p-4">
-                        <div className="flex items-center justify-between gap-3"><strong className="text-slate-950">{position.ticker}</strong><span className={`font-semibold ${valueTone(pnl)}`}>{pnl >= 0 ? "+" : ""}{money(pnl, selectedAgent.currency)}</span></div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <strong className="text-slate-950">{position.company_name}</strong>
+                            <p className="mt-0.5 text-xs font-semibold tracking-[0.12em] text-slate-500">{position.ticker}</p>
+                          </div>
+                          <span className={`font-semibold ${valueTone(pnl)}`}>{pnl >= 0 ? "+" : ""}{money(pnl, selectedAgent.currency)}</span>
+                        </div>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{position.quantity} ks · vstup {decimal.format(position.entry_price)} · nyní {decimal.format(position.current_price)}</p>
                         <p className="text-sm leading-6 text-slate-600">SL {decimal.format(position.stop_loss)} · T1 {decimal.format(position.target_1)} · T2 {decimal.format(position.target_2)}</p>
                       </article>

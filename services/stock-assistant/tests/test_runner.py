@@ -19,6 +19,9 @@ class FakeMarketData:
     def fetch(self, symbols):
         return {symbol: object() for symbol in symbols}
 
+    def fetch_names(self, symbols):
+        return {symbol: f"Company {symbol}" for symbol in symbols}
+
 
 class FakeEuropeUniverse:
     def get_symbols(self, override=None):
@@ -164,3 +167,7 @@ def test_europe_agents_run_while_us_market_is_closed(tmp_path, snapshot, monkeyp
         len(repository.get_agent_positions(int(account["id"]))) == 1
         for account in repository.get_agent_accounts("EU")
     )
+    european_position = repository.get_agent_positions(
+        int(repository.get_agent_accounts("EU")[0]["id"])
+    )[0]
+    assert european_position["company_name"] == "Company ADS.DE"
