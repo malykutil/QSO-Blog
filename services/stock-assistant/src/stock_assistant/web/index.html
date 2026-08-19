@@ -59,6 +59,14 @@
     .value { font-size: 26px; font-weight: 780; letter-spacing: -.035em; margin-top: 5px; }
     .positive { color: var(--green); }
     .negative { color: var(--red); }
+    .market-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .market-card { padding: 19px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .market-card h2 { margin-top: 4px; font-size: 19px; }
+    .market-time { margin-top: 10px; font-size: 16px; font-weight: 750; }
+    .market-session { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .market-badge { border-radius: 999px; padding: 7px 11px; font-size: 11px; font-weight: 900; }
+    .market-badge.open { color: #052e16; background: var(--green); }
+    .market-badge.closed { color: #3b2500; background: var(--amber); }
     .section-head { display: flex; justify-content: space-between; align-items: end; margin: 26px 2px 12px; }
     .section-head p { color: var(--muted); margin-top: 4px; }
     .agent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -105,7 +113,7 @@
     .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; }
     .toast { position: fixed; right: 24px; bottom: 24px; padding: 13px 16px; border-radius: 12px; background: #193528; border: 1px solid var(--line); box-shadow: var(--shadow); display: none; }
     @media (max-width: 1100px) { .agent-grid { grid-template-columns: 1fr 1fr; } .hero { grid-template-columns: 1fr 1fr; } .hero-copy { grid-column: 1 / -1; } }
-    @media (max-width: 760px) { .shell { padding: 17px; } header { align-items: flex-start; } .status span:last-child { display: none; } .hero, .dashboard-grid, .agent-grid { grid-template-columns: 1fr; } .hero-stat { border-left: 0; border-top: 1px solid var(--line); padding: 14px 0 0; } }
+    @media (max-width: 760px) { .shell { padding: 17px; } header { align-items: flex-start; } .status span:last-child { display: none; } .hero, .dashboard-grid, .agent-grid, .market-grid { grid-template-columns: 1fr; } .hero-stat { border-left: 0; border-top: 1px solid var(--line); padding: 14px 0 0; } }
   </style>
 </head>
 <body>
@@ -123,6 +131,10 @@
     </section>
 
     <div class="section-head"><div><h2>Modely a jejich portfolia</h2><p>Kapitál lze změnit; u rozběhnutého portfolia je vyžadovaný potvrzený reset historie.</p></div></div>
+    <section class="market-grid" aria-label="Otevírací doby sledovaných trhů">
+      <article class="panel market-card" id="marketEU"></article>
+      <article class="panel market-card" id="marketUS"></article>
+    </section>
     <section class="agent-grid" id="agentGrid"></section>
 
     <div class="section-head"><div><h2>Výkonnost</h2><p id="chartSubtitle">Equity curve nejlepšího agenta</p></div></div>
@@ -155,6 +167,7 @@
     const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
     const metric = (label, value, tone = '') => { const box = el('div', 'metric'); box.append(el('span', 'label', label), el('strong', tone, value)); return box; };
     const tone = value => value > 0 ? 'positive' : value < 0 ? 'negative' : '';
+    const marketDateTime = value => value ? new Date(value).toLocaleString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'čas není dostupný';
 
     function toast(message, error = false) {
       const box = document.getElementById('toast'); box.textContent = message; box.style.display = 'block'; box.style.borderColor = error ? 'var(--red)' : 'var(--line)';
@@ -209,11 +222,20 @@
       items.forEach(article => { const item=el('article','news-item'); const link=el('a','',article.title); link.href=article.url; link.target='_blank'; link.rel='noopener noreferrer'; item.append(link,el('div','news-meta',`${article.ticker || 'TRH'} · ${article.source} · skóre ${article.significance_score}/10`)); box.append(item); });
     }
 
+    function renderMarket(market) {
+      const card = document.getElementById(`market${market.code}`); card.replaceChildren();
+      const copy = el('div');
+      copy.append(el('div', 'eyebrow', 'Burzovní seance'), el('h2', '', market.name));
+      copy.append(el('div', 'market-time', `${market.is_open ? 'Dnešní zavření' : 'Nejbližší otevření'}: ${marketDateTime(market.is_open ? market.closes_at : market.opens_at)}`));
+      copy.append(el('div', 'market-session', `Seance ${marketDateTime(market.opens_at)}–${marketDateTime(market.closes_at)} · český čas`));
+      card.append(copy, el('span', `market-badge ${market.is_open ? 'open' : 'closed'}`, market.is_open ? 'OTEVŘENO' : 'ZAVŘENO'));
+    }
+
     function render() {
       const agents=data.agents; const ranked=[...agents].sort((a,b)=>b.total_return_percent-a.total_return_percent); const best=ranked[0];
       document.getElementById('systemStatus').textContent=`Systém aktivní · ${data.mode} · kontrola každých 5 minut`;
       const usEquity=agents.filter(a=>a.market==='US').reduce((sum,a)=>sum+a.equity,0); const euEquity=agents.filter(a=>a.market==='EU').reduce((sum,a)=>sum+a.equity,0); document.getElementById('leagueCapital').textContent=`${money(usEquity,'USD')} · ${money(euEquity,'EUR')}`; document.getElementById('bestAgent').textContent=best ? best.name : '—'; document.getElementById('openCount').textContent=String(agents.reduce((sum,a)=>sum+a.open_positions.length,0));
-      renderAgents(agents); renderLeaderboard(agents); renderNews(data.recent_news); const selected=agents.find(a=>a.id===selectedAgentId)||best; if(selected){selectedAgentId=selected.id;renderPositions(selected);drawCurve(selected);}
+      renderMarket(data.engine.markets.EU); renderMarket(data.engine.markets.US); renderAgents(agents); renderLeaderboard(agents); renderNews(data.recent_news); const selected=agents.find(a=>a.id===selectedAgentId)||best; if(selected){selectedAgentId=selected.id;renderPositions(selected);drawCurve(selected);}
     }
 
     async function load() { try { const response=await fetch('/api/dashboard',{cache:'no-store'}); if(!response.ok)throw new Error('Dashboard API není dostupné'); data=await response.json(); render(); } catch(error) { document.getElementById('systemStatus').textContent='Dashboard je dočasně nedostupný'; toast(error.message,true); } }

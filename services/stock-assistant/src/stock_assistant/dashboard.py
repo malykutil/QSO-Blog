@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
+from stock_assistant.market_hours import market_overview
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
                 "data_source": "Yahoo Finance OHLCV",
                 "interval": settings.market_data_interval,
                 "last_cycle": latest_cycle,
+                "markets": market_overview(),
             },
             "main_account": main_account,
             "agents": agents,

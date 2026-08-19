@@ -2,14 +2,13 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-import pandas_market_calendars as mcal
-
 from stock_assistant.agent_league import AgentLeague
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
 from stock_assistant.indicators import InvalidMarketData, build_snapshot
 from stock_assistant.llm import Analyzer
 from stock_assistant.market_data import YahooMarketDataProvider
+from stock_assistant.market_hours import market_is_open
 from stock_assistant.models import NewsArticle, ScreeningCandidate
 from stock_assistant.news import NewsProvider
 from stock_assistant.paper import PaperBroker
@@ -18,17 +17,6 @@ from stock_assistant.telegram import TelegramNotifier
 from stock_assistant.universe import EuropeanUniverseProvider, UniverseProvider
 
 logger = logging.getLogger(__name__)
-
-
-def market_is_open(calendar_name: str, now: datetime | None = None) -> bool:
-    now = (now or datetime.now(UTC)).astimezone(UTC)
-    calendar = mcal.get_calendar(calendar_name)
-    schedule = calendar.schedule(start_date=now.date(), end_date=now.date())
-    if schedule.empty:
-        return False
-    market_open = schedule.iloc[0]["market_open"].to_pydatetime()
-    market_close = schedule.iloc[0]["market_close"].to_pydatetime()
-    return market_open <= now <= market_close
 
 
 def nyse_is_open(now: datetime | None = None) -> bool:

@@ -90,6 +90,16 @@ export type TradingEngineState = {
   data_source: "Yahoo Finance OHLCV";
   interval: "5m";
   last_cycle: TradingCycleState | null;
+  markets: Record<"EU" | "US", TradingMarketState>;
+};
+
+export type TradingMarketState = {
+  code: "EU" | "US";
+  name: string;
+  calendar: "XETR" | "NYSE";
+  is_open: boolean;
+  opens_at: string | null;
+  closes_at: string | null;
 };
 
 export type TradingDashboardPayload = {
@@ -167,6 +177,18 @@ function isAgent(value: unknown): value is TradingAgent {
   );
 }
 
+function isMarketState(value: unknown, code: "EU" | "US"): value is TradingMarketState {
+  return (
+    isRecord(value) &&
+    value.code === code &&
+    typeof value.name === "string" &&
+    value.calendar === (code === "EU" ? "XETR" : "NYSE") &&
+    typeof value.is_open === "boolean" &&
+    (value.opens_at === null || typeof value.opens_at === "string") &&
+    (value.closes_at === null || typeof value.closes_at === "string")
+  );
+}
+
 export function isTradingDashboardPayload(value: unknown): value is TradingDashboardPayload {
   if (!isRecord(value) || value.mode !== "PAPER") return false;
   const engine = value.engine;
@@ -176,6 +198,9 @@ export function isTradingDashboardPayload(value: unknown): value is TradingDashb
     isRecord(engine) &&
     engine.data_source === "Yahoo Finance OHLCV" &&
     engine.interval === "5m" &&
+    isRecord(engine.markets) &&
+    isMarketState(engine.markets.EU, "EU") &&
+    isMarketState(engine.markets.US, "US") &&
     (engine.last_cycle === null ||
       (isRecord(engine.last_cycle) &&
         typeof engine.last_cycle.status === "string" &&

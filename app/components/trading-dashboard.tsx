@@ -6,6 +6,7 @@ import {
   isTradingDashboardPayload,
   type TradingAgent,
   type TradingDashboardPayload,
+  type TradingMarketState,
 } from "@/src/lib/trading-types";
 
 const moneyFormatters = {
@@ -66,6 +67,50 @@ function valueTone(value: number) {
   if (value > 0) return "text-emerald-600 dark:text-emerald-400";
   if (value < 0) return "text-rose-600 dark:text-rose-400";
   return "text-slate-500";
+}
+
+function marketDateTime(value: string | null) {
+  if (!value) return "čas není dostupný";
+  return new Date(value).toLocaleString("cs-CZ", {
+    weekday: "short",
+    day: "numeric",
+    month: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function MarketSessionCard({ market }: { market: TradingMarketState }) {
+  return (
+    <article className="glass-panel rounded-[1.5rem] p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Burzovní seance
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">{market.name}</h2>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+            market.is_open
+              ? "bg-emerald-100 text-emerald-800"
+              : "bg-amber-100 text-amber-900"
+          }`}
+        >
+          {market.is_open ? "OTEVŘENO" : "ZAVŘENO"}
+        </span>
+      </div>
+      <p className="mt-5 text-sm text-slate-500">
+        {market.is_open ? "Dnešní zavření" : "Nejbližší otevření"}
+      </p>
+      <p className="mt-1 text-lg font-semibold text-slate-950">
+        {marketDateTime(market.is_open ? market.closes_at : market.opens_at)}
+      </p>
+      <p className="mt-3 text-xs text-slate-500">
+        Seance {marketDateTime(market.opens_at)}–{marketDateTime(market.closes_at)} · český čas
+      </p>
+    </article>
+  );
 }
 
 function EquityChart({ agent }: { agent: TradingAgent }) {
@@ -358,6 +403,13 @@ export function TradingDashboard() {
             {lastCycle?.finished_at ? `Poslední cyklus ${new Date(lastCycle.finished_at).toLocaleString("cs-CZ")}` : "Připraveno k prvnímu cyklu"}
           </p>
         </div>
+      ) : null}
+
+      {data ? (
+        <section className="grid gap-4 md:grid-cols-2" aria-label="Otevírací doby sledovaných trhů">
+          <MarketSessionCard market={data.engine.markets.EU} />
+          <MarketSessionCard market={data.engine.markets.US} />
+        </section>
       ) : null}
 
       {error ? (

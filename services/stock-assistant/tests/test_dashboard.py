@@ -36,6 +36,10 @@ def test_czech_dashboard_and_api_are_available(tmp_path):
     assert payload.json()["mode"] == "PAPER"
     assert payload.json()["engine"]["data_source"] == "Yahoo Finance OHLCV"
     assert payload.json()["engine"]["interval"] == "5m"
+    assert set(payload.json()["engine"]["markets"]) == {"US", "EU"}
+    assert payload.json()["engine"]["markets"]["US"]["calendar"] == "NYSE"
+    assert payload.json()["engine"]["markets"]["EU"]["calendar"] == "XETR"
+    assert isinstance(payload.json()["engine"]["markets"]["US"]["is_open"], bool)
     assert len(payload.json()["agents"]) == 8
     assert {agent["market"] for agent in payload.json()["agents"]} == {"US", "EU"}
     assert all(agent["learning"]["policy_version"] == 1 for agent in payload.json()["agents"])
