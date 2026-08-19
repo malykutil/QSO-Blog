@@ -6,16 +6,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from stock_assistant.adaptive import FEATURE_NAMES, default_weights
+from stock_assistant.agent_profiles import is_high_volatility_agent
 from stock_assistant.models import Action, NewsArticle, Position, TradeAnalysis, TradeExecution
 
 DEFAULT_AGENTS = (
     ("trend", "USA Trend", "TREND", "US", "USD"),
     ("breakout", "USA Breakout", "BREAKOUT", "US", "USD"),
-    ("momentum", "USA Momentum", "MOMENTUM", "US", "USD"),
+    ("momentum", "USA High Volatility", "MOMENTUM", "US", "USD"),
     ("hybrid", "USA Hybrid", "HYBRID", "US", "USD"),
     ("europe-trend", "Evropa Trend", "TREND", "EU", "EUR"),
     ("europe-breakout", "Evropa Breakout", "BREAKOUT", "EU", "EUR"),
-    ("europe-momentum", "Evropa Momentum", "MOMENTUM", "EU", "EUR"),
+    ("europe-momentum", "Evropa High Volatility", "MOMENTUM", "EU", "EUR"),
     ("europe-hybrid", "Evropa Hybrid", "HYBRID", "EU", "EUR"),
 )
 
@@ -249,12 +250,14 @@ class Repository:
         agent_initial_cash: float = 10_000.0,
         agent_min_score: float = 75.0,
         agent_europe_initial_cash: float = 10_000.0,
+        agent_high_volatility_min_score: float = 68.0,
     ) -> None:
         self.path = path
         self.initial_cash = initial_cash
         self.agent_initial_cash = agent_initial_cash
         self.agent_min_score = agent_min_score
         self.agent_europe_initial_cash = agent_europe_initial_cash
+        self.agent_high_volatility_min_score = agent_high_volatility_min_score
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -327,7 +330,7 @@ class Repository:
                 [(name, slug) for slug, name, _strategy, _market, _currency in DEFAULT_AGENTS],
             )
             accounts = connection.execute(
-                "SELECT id, strategy FROM agent_accounts ORDER BY id"
+                "SELECT id, slug, strategy FROM agent_accounts ORDER BY id"
             ).fetchall()
             connection.executemany(
                 """INSERT OR IGNORE INTO agent_learning_state
@@ -339,20 +342,44 @@ class Repository:
                     (
                         int(account["id"]),
                         json.dumps(default_weights(str(account["strategy"])), sort_keys=True),
-                        self.agent_min_score,
-                        self.agent_min_score,
+                        (
+                            self.agent_high_volatility_min_score
+                            if is_high_volatility_agent(str(account["slug"]))
+                            else self.agent_min_score
+                        ),
+                        (
+                            self.agent_high_volatility_min_score
+                            if is_high_volatility_agent(str(account["slug"]))
+                            else self.agent_min_score
+                        ),
                         now,
                     )
                     for account in accounts
                 ],
             )
-            connection.execute(
+            connection.executemany(
                 """UPDATE agent_learning_state
                    SET decision_threshold = MIN(
                            100, MAX(0, ? + decision_threshold - base_threshold)
                        ),
-                       base_threshold = ?""",
-                (self.agent_min_score, self.agent_min_score),
+                       base_threshold = ?
+                   WHERE agent_id = ?""",
+                [
+                    (
+                        (
+                            self.agent_high_volatility_min_score
+                            if is_high_volatility_agent(str(account["slug"]))
+                            else self.agent_min_score
+                        ),
+                        (
+                            self.agent_high_volatility_min_score
+                            if is_high_volatility_agent(str(account["slug"]))
+                            else self.agent_min_score
+                        ),
+                        int(account["id"]),
+                    )
+                    for account in accounts
+                ],
             )
             connection.execute("PRAGMA optimize")
             connection.commit()

@@ -179,10 +179,10 @@
       const ranked = [...agents].sort((a, b) => b.total_return_percent - a.total_return_percent);
       ranked.forEach((agent, index) => {
         const card = el('article', 'card'); card.style.setProperty('--accent', accents[index % accents.length]);
-        const top = el('div', 'agent-top'); const title = el('div'); title.append(el('div', 'strategy', agent.strategy), el('h3', '', agent.name)); top.append(title, el('div', 'rank', `#${index + 1}`));
+        const top = el('div', 'agent-top'); const title = el('div'); title.append(el('div', 'strategy', agent.risk_profile === 'HIGH_VOLATILITY' ? 'HIGH VOLATILITY' : agent.strategy), el('h3', '', agent.name)); top.append(title, el('div', 'rank', `#${index + 1}`));
         card.append(top, el('div', 'agent-equity', money(agent.equity, agent.currency)));
         const change = el('div', tone(agent.total_return_percent), `${agent.total_return_percent >= 0 ? '+' : ''}${number.format(agent.total_return_percent)} % od startu`); card.append(change);
-        const metrics = el('div', 'metrics'); metrics.append(metric('Trh', agent.market === 'US' ? 'USA' : 'Evropa'), metric('Hotovost', money(agent.cash, agent.currency)), metric('Pozice', String(agent.open_positions.length)), metric('Win rate', `${number.format(agent.win_rate)} %`), metric('Max. drawdown', `${number.format(agent.max_drawdown_percent)} %`, 'negative')); card.append(metrics);
+        const metrics = el('div', 'metrics'); metrics.append(metric('Trh', agent.market === 'US' ? 'USA' : 'Evropa'), metric('Hotovost', money(agent.cash, agent.currency)), metric('Pozice', String(agent.open_positions.length)), metric('Riziko / obchod', `${number.format(agent.risk_per_trade_percent)} %`, agent.risk_profile === 'HIGH_VOLATILITY' ? 'negative' : ''), metric('Win rate', `${number.format(agent.win_rate)} %`), metric('Max. drawdown', `${number.format(agent.max_drawdown_percent)} %`, 'negative')); card.append(metrics);
         const actions = el('div', 'card-actions');
         const detail = el('button', 'btn', 'Zobrazit detail'); detail.type = 'button'; detail.addEventListener('click', () => { selectedAgentId = agent.id; renderPositions(agent); drawCurve(agent); });
         const capital = el('button', 'btn', 'Nastavit kapitál'); capital.type = 'button'; capital.addEventListener('click', () => openCapital(agent));

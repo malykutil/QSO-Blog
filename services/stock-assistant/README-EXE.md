@@ -24,7 +24,8 @@ EXE. Systémový zámek nedovolí spustit dva schedulery současně. Aplikace po
 `TRADING_MODE=paper`; neobsahuje žádnou live broker exekuci.
 
 Dashboard je dostupný pouze lokálně na `http://127.0.0.1:8765`. Zobrazuje ligu čtyř
-samostatných PAPER agentů (Trend, Breakout, Momentum a Hybrid), jejich kapitál, hotovost,
+samostatných PAPER agentů (včetně jednoho High Volatility profilu pro USA a jednoho pro
+Evropu), jejich kapitál, hotovost,
 equity, výnos, drawdown, win rate, otevřené pozice a equity křivku. Kapitál lze v UI změnit;
 u rozběhnutého portfolia je z bezpečnostních důvodů vyžadován potvrzený reset historie.
 

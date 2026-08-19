@@ -46,6 +46,9 @@ export type TradingAgent = {
   strategy: "TREND" | "BREAKOUT" | "MOMENTUM" | "HYBRID";
   market: "US" | "EU";
   currency: "USD" | "EUR";
+  risk_profile: "STANDARD" | "HIGH_VOLATILITY";
+  risk_per_trade_percent: number;
+  max_portfolio_risk_percent: number;
   initial_cash: number;
   cash: number;
   enabled: number;
@@ -163,6 +166,9 @@ function isAgent(value: unknown): value is TradingAgent {
     ["TREND", "BREAKOUT", "MOMENTUM", "HYBRID"].includes(String(value.strategy)) &&
     ["US", "EU"].includes(String(value.market)) &&
     ["USD", "EUR"].includes(String(value.currency)) &&
+    ["STANDARD", "HIGH_VOLATILITY"].includes(String(value.risk_profile)) &&
+    isFiniteNumber(value.risk_per_trade_percent) &&
+    isFiniteNumber(value.max_portfolio_risk_percent) &&
     isFiniteNumber(value.initial_cash) &&
     isFiniteNumber(value.cash) &&
     isFiniteNumber(value.equity) &&

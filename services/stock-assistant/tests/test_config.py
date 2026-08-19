@@ -16,6 +16,8 @@ def test_only_paper_mode_is_accepted(tmp_path):
 def test_maximum_risk_cannot_exceed_one_percent():
     with pytest.raises(ValidationError):
         Settings(max_risk_per_trade=0.0101)
+    with pytest.raises(ValidationError):
+        Settings(agent_high_volatility_risk_per_trade=0.0101)
 
 
 def test_partial_telegram_configuration_is_rejected():

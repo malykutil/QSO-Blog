@@ -440,6 +440,11 @@ export function TradingDashboard() {
                   </div>
                   <span className="text-sm text-slate-500">#{index + 1}</span>
                 </div>
+                {agent.risk_profile === "HIGH_VOLATILITY" ? (
+                  <p className="mt-4 inline-flex rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800">
+                    HIGH VOLATILITY · až {decimal.format(agent.risk_per_trade_percent)} % rizika / obchod
+                  </p>
+                ) : null}
                 <p className="mt-4 inline-flex rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
                   Učení v{agent.learning.policy_version} · {agent.learning.trades_learned} obchodů
                 </p>
@@ -452,6 +457,7 @@ export function TradingDashboard() {
                   <div><dt className="text-slate-500">Pozice</dt><dd className="mt-1 font-semibold text-slate-950">{agent.open_positions.length}</dd></div>
                   <div><dt className="text-slate-500">Win rate</dt><dd className="mt-1 font-semibold text-slate-950">{decimal.format(agent.win_rate)} %</dd></div>
                   <div><dt className="text-slate-500">Drawdown</dt><dd className="mt-1 font-semibold text-rose-600">{decimal.format(agent.max_drawdown_percent)} %</dd></div>
+                  <div><dt className="text-slate-500">Max. otevřené riziko</dt><dd className="mt-1 font-semibold text-slate-950">{decimal.format(agent.max_portfolio_risk_percent)} %</dd></div>
                 </dl>
                 <div className="mt-6 flex flex-wrap gap-2">
                   <button type="button" onClick={() => setSelectedAgentId(agent.id)} className="rounded-xl border border-slate-900/10 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-900">

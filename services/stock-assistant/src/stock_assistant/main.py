@@ -56,6 +56,7 @@ def build_application(settings: Settings | None = None) -> Application:
         settings.agent_initial_cash,
         settings.agent_min_score,
         settings.agent_europe_initial_cash,
+        settings.agent_high_volatility_min_score,
     )
     repository.initialize()
 

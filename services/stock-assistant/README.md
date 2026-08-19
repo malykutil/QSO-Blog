@@ -85,12 +85,16 @@ dostupné z internetu.
 
 - **USA Trend / Evropa Trend** – vyžaduje rostoucí EMA stack a zdravé momentum;
 - **Breakout** – hledá průraz dvacetibarového maxima se zvýšeným volume;
-- **Momentum** – sleduje dvacetibarové momentum, RSI, MACD a relativní volume;
+- **USA High Volatility / Evropa High Volatility** – vybírá horních 20 % titulů podle ATR,
+  vyžaduje růstové momentum a zvýšený relativní objem;
 - **Hybrid** – kombinuje trend s breakout/momentum podmínkou a vyšším skóre.
 
 Čtyři USA účty začínají standardně s 10 000 USD a čtyři evropské účty s 10 000 EUR.
-Každý riskuje nejvýše 0,5 % equity na obchod, nejvýše
-2 % celého portfolia a nejvýše 20 % equity v jednom tickeru. Tyto hodnoty lze změnit
+Standardní agenti riskují nejvýše 0,5 % equity na obchod, nejvýše 2 % celého portfolia
+a nejvýše 20 % equity v jednom tickeru. Dva označené High Volatility účty používají
+maximálně 1 % na obchod, 5 % celkového otevřeného rizika a 35 % expozice na ticker.
+Každá pozice má povinný stop-loss; hranici 1 % na obchod nelze konfigurací překročit.
+Tyto hodnoty lze změnit
 v `.env`. Počáteční kapitál každého agenta lze změnit přímo v UI. Pokud už má agent
 pozice nebo historii, API vyžaduje výslovně potvrzený reset, aby se nic nesmazalo omylem.
 Jde o srovnání adaptivních obchodních strategií, nikoli o osm samostatných OpenAI modelů.

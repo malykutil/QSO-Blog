@@ -6,6 +6,7 @@ from stock_assistant.adaptive import (
     learn_from_outcome,
     snapshot_features,
 )
+from stock_assistant.agent_profiles import is_high_volatility_agent
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
 from stock_assistant.models import IndicatorSnapshot
@@ -64,6 +65,33 @@ def strategy_accepts(strategy: str, snapshot: IndicatorSnapshot, score: float) -
     return False
 
 
+def high_volatility_score(snapshot: IndicatorSnapshot) -> float:
+    """Favor upside momentum in the most volatile valid symbols."""
+    atr_percent = snapshot.atr / snapshot.current_price * 100
+    volatility = min(atr_percent / 5, 1.0) * 35
+    volume = min(snapshot.relative_volume / 2, 1.0) * 20
+    momentum = min(max(snapshot.momentum_20, 0) / 8, 1.0) * 20
+    structure = 10 if snapshot.current_price > snapshot.ema20 else 0
+    macd = 10 if snapshot.macd_histogram > 0 else 0
+    candle = 5 if snapshot.close >= snapshot.open else 0
+    return min(100.0, volatility + volume + momentum + structure + macd + candle)
+
+
+def high_volatility_accepts(
+    snapshot: IndicatorSnapshot,
+    volatility_floor: float,
+) -> bool:
+    atr_percent = snapshot.atr / snapshot.current_price * 100
+    return (
+        atr_percent >= volatility_floor
+        and snapshot.current_price > snapshot.ema20
+        and snapshot.momentum_20 > 0
+        and snapshot.relative_volume >= 1.1
+        and 50 <= snapshot.rsi <= 82
+        and snapshot.macd_histogram > 0
+    )
+
+
 class AgentLeague:
     """Eight region-isolated adaptive PAPER portfolios sharing validated quotes."""
 
@@ -85,7 +113,12 @@ class AgentLeague:
                 continue
             agent_id = int(account["id"])
             try:
-                self._process_agent(agent_id, str(account["strategy"]), snapshots)
+                self._process_agent(
+                    agent_id,
+                    str(account["strategy"]),
+                    snapshots,
+                    high_volatility=is_high_volatility_agent(str(account["slug"])),
+                )
                 self.repository.record_agent_equity(agent_id)
             except Exception as exc:
                 logger.error(
@@ -99,6 +132,8 @@ class AgentLeague:
         agent_id: int,
         strategy: str,
         snapshots: dict[str, IndicatorSnapshot],
+        *,
+        high_volatility: bool = False,
     ) -> None:
         state = self.repository.agent_runtime_state(agent_id)
         closed_tickers: set[str] = set()
@@ -128,18 +163,36 @@ class AgentLeague:
 
         state = self.repository.agent_runtime_state(agent_id)
         positions = {str(position["ticker"]) for position in state["positions"]}
-        if len(positions) >= self.settings.agent_max_positions:
+        max_positions = (
+            self.settings.agent_high_volatility_max_positions
+            if high_volatility
+            else self.settings.agent_max_positions
+        )
+        if len(positions) >= max_positions:
             return
 
         learning = self.repository.get_agent_learning_state(agent_id)
         weights = dict(learning["weights"])
         threshold = float(learning["decision_threshold"])
         policy_version = int(learning["policy_version"])
+        atr_percentages = sorted(
+            snapshot.atr / snapshot.current_price * 100
+            for snapshot in snapshots.values()
+        )
+        upper_quintile_index = math.floor(0.8 * (len(atr_percentages) - 1))
+        volatility_floor = max(
+            self.settings.agent_high_volatility_min_atr_percent,
+            atr_percentages[upper_quintile_index],
+        )
         ranked: list[tuple[float, float, dict[str, float], IndicatorSnapshot]] = []
         for snapshot in snapshots.values():
             if snapshot.ticker in positions or snapshot.ticker in closed_tickers:
                 continue
-            base_score = score_snapshot(snapshot)
+            base_score = (
+                high_volatility_score(snapshot)
+                if high_volatility
+                else score_snapshot(snapshot)
+            )
             features = snapshot_features(snapshot)
             decision_score = adaptive_score(base_score, features, weights)
             ranked.append((decision_score, base_score, features, snapshot))
@@ -148,7 +201,12 @@ class AgentLeague:
         for decision_score, base_score, features, snapshot in ranked:
             if decision_score < threshold:
                 break
-            if not strategy_accepts(strategy, snapshot, base_score):
+            accepted = (
+                high_volatility_accepts(snapshot, volatility_floor)
+                if high_volatility
+                else strategy_accepts(strategy, snapshot, base_score)
+            )
+            if not accepted:
                 continue
             if self._try_open(
                 agent_id,
@@ -158,6 +216,7 @@ class AgentLeague:
                 decision_score,
                 features,
                 policy_version,
+                high_volatility=high_volatility,
             ):
                 break  # At most one new position per agent and cycle.
 
@@ -224,25 +283,43 @@ class AgentLeague:
         decision_score: float,
         features: dict[str, float],
         policy_version: int,
+        *,
+        high_volatility: bool = False,
     ) -> bool:
         state = self.repository.agent_runtime_state(agent_id)
         equity = float(state["equity"])
         cash = float(state["cash"])
         entry = snapshot.current_price
-        stop = entry - 1.5 * snapshot.atr
+        stop_atr_multiple = 2.0 if high_volatility else 1.5
+        stop = entry - stop_atr_multiple * snapshot.atr
         if not (math.isfinite(stop) and 0 < stop < entry):
             return False
         risk_per_share = entry - stop
+        max_portfolio_risk = (
+            self.settings.agent_high_volatility_max_portfolio_risk
+            if high_volatility
+            else self.settings.agent_max_portfolio_risk
+        )
+        risk_per_trade = (
+            self.settings.agent_high_volatility_risk_per_trade
+            if high_volatility
+            else self.settings.agent_risk_per_trade
+        )
+        max_symbol_exposure = (
+            self.settings.agent_high_volatility_max_symbol_exposure
+            if high_volatility
+            else self.settings.agent_max_symbol_exposure
+        )
         remaining_portfolio_risk = max(
-            equity * self.settings.agent_max_portfolio_risk
+            equity * max_portfolio_risk
             - float(state["portfolio_risk"]),
             0,
         )
         risk_budget = min(
-            equity * self.settings.agent_risk_per_trade,
+            equity * risk_per_trade,
             remaining_portfolio_risk,
         )
-        exposure_budget = equity * self.settings.agent_max_symbol_exposure
+        exposure_budget = equity * max_symbol_exposure
         quantity = min(
             math.floor(risk_budget / risk_per_share),
             math.floor(exposure_budget / entry),
@@ -251,7 +328,7 @@ class AgentLeague:
         if quantity < 1:
             return False
         target_1 = entry + self.settings.min_risk_reward * risk_per_share
-        target_2 = entry + 4 * risk_per_share
+        target_2 = entry + (5 if high_volatility else 4) * risk_per_share
         initial_risk = quantity * risk_per_share
         self.repository.agent_open_position(
             agent_id=agent_id,
@@ -263,7 +340,8 @@ class AgentLeague:
             target_2=target_2,
             scanner_score=decision_score,
             reason=(
-                f"Strategie {strategy}: adaptivní skóre {decision_score:.1f}/100 "
+                f"Strategie {'HIGH_VOLATILITY' if high_volatility else strategy}: "
+                f"adaptivní skóre {decision_score:.1f}/100 "
                 f"(technické {base_score:.1f}), politika v{policy_version}."
             ),
             features=features,
@@ -274,7 +352,7 @@ class AgentLeague:
         )
         logger.info(
             "Agent PAPER BUY agent_id=%d strategy=%s ticker=%s "
-            "base_score=%.1f decision_score=%.1f policy=%d quantity=%d",
+            "base_score=%.1f decision_score=%.1f policy=%d quantity=%d high_volatility=%s",
             agent_id,
             strategy,
             snapshot.ticker,
@@ -282,5 +360,6 @@ class AgentLeague:
             decision_score,
             policy_version,
             quantity,
+            high_volatility,
         )
         return True

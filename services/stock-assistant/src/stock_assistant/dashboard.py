@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from stock_assistant.agent_profiles import is_high_volatility_agent
 from stock_assistant.config import Settings
 from stock_assistant.db import Repository
 from stock_assistant.market_hours import market_overview
@@ -57,6 +58,19 @@ def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
     def dashboard_data(request: Request) -> dict[str, object]:
         require_access(request)
         agents = repository.agent_dashboard()
+        for agent in agents:
+            high_volatility = is_high_volatility_agent(str(agent["slug"]))
+            agent["risk_profile"] = "HIGH_VOLATILITY" if high_volatility else "STANDARD"
+            agent["risk_per_trade_percent"] = 100 * (
+                settings.agent_high_volatility_risk_per_trade
+                if high_volatility
+                else settings.agent_risk_per_trade
+            )
+            agent["max_portfolio_risk_percent"] = 100 * (
+                settings.agent_high_volatility_max_portfolio_risk
+                if high_volatility
+                else settings.agent_max_portfolio_risk
+            )
         main_account = repository.dump_account()
         recent_news = [
             article.model_dump(mode="json") for article in repository.recent_news(limit=8)

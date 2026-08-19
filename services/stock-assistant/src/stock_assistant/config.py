@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     agent_max_symbol_exposure: float = Field(default=0.20, gt=0, le=0.50)
     agent_min_score: int = Field(default=75, ge=50, le=100)
     agent_learning_rate: float = Field(default=0.12, ge=0.01, le=0.50)
+    agent_high_volatility_risk_per_trade: float = Field(default=0.01, ge=0.005, le=0.01)
+    agent_high_volatility_max_portfolio_risk: float = Field(default=0.05, ge=0.01, le=0.05)
+    agent_high_volatility_max_positions: int = Field(default=8, ge=1, le=20)
+    agent_high_volatility_max_symbol_exposure: float = Field(default=0.35, gt=0, le=0.50)
+    agent_high_volatility_min_atr_percent: float = Field(default=1.5, ge=0.5, le=10)
+    agent_high_volatility_min_score: int = Field(default=68, ge=50, le=90)
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = Field(default=8765, ge=1024, le=65535)
     dashboard_api_token: str | None = Field(default=None, min_length=32)
