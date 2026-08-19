@@ -120,6 +120,7 @@ def test_agent_league_learns_from_a_target_win(tmp_path, snapshot):
 
     for agent in repository.agent_dashboard():
         learning = agent["learning"]
+        assert agent["open_positions"] == []
         assert agent["realized_pnl"] == pytest.approx(208)
         assert learning["trades_learned"] == 1
         assert learning["wins"] == 1

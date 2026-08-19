@@ -96,6 +96,7 @@ class AgentLeague:
         snapshots: dict[str, IndicatorSnapshot],
     ) -> None:
         state = self.repository.agent_runtime_state(agent_id)
+        closed_tickers: set[str] = set()
         for position in list(state["positions"]):
             ticker = str(position["ticker"])
             snapshot = snapshots.get(ticker)
@@ -109,6 +110,7 @@ class AgentLeague:
                     snapshot.current_price,
                     "Dosažen ochranný stop-loss.",
                 )
+                closed_tickers.add(ticker)
             elif snapshot.current_price >= float(position["target_2"]):
                 self._close_and_learn(
                     agent_id,
@@ -117,6 +119,7 @@ class AgentLeague:
                     snapshot.current_price,
                     "Dosažen druhý cenový cíl.",
                 )
+                closed_tickers.add(ticker)
 
         state = self.repository.agent_runtime_state(agent_id)
         positions = {str(position["ticker"]) for position in state["positions"]}
@@ -129,7 +132,7 @@ class AgentLeague:
         policy_version = int(learning["policy_version"])
         ranked: list[tuple[float, float, dict[str, float], IndicatorSnapshot]] = []
         for snapshot in snapshots.values():
-            if snapshot.ticker in positions:
+            if snapshot.ticker in positions or snapshot.ticker in closed_tickers:
                 continue
             base_score = score_snapshot(snapshot)
             features = snapshot_features(snapshot)
