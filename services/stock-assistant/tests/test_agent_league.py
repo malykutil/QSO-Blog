@@ -22,6 +22,7 @@ def make_league(tmp_path):
         agent_risk_per_trade=0.005,
         agent_max_portfolio_risk=0.02,
         agent_max_symbol_exposure=0.20,
+        agent_high_volatility_max_symbol_exposure=0.35,
         agent_min_score=75,
     )
     repository = Repository(

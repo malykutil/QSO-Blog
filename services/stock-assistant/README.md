@@ -89,10 +89,11 @@ dostupné z internetu.
   vyžaduje růstové momentum a zvýšený relativní objem;
 - **Hybrid** – kombinuje trend s breakout/momentum podmínkou a vyšším skóre.
 
-Čtyři USA účty začínají standardně se 100 000 USD a čtyři evropské účty se 100 000 EUR.
+Čtyři USA účty začínají standardně s 1 000 USD a čtyři evropské účty s 1 000 EUR.
 Standardní agenti riskují nejvýše 0,5 % equity na obchod, nejvýše 2 % celého portfolia
 a nejvýše 20 % equity v jednom tickeru. Dva označené High Volatility účty používají
-maximálně 1 % na obchod, 5 % celkového otevřeného rizika a 35 % expozice na ticker.
+maximálně 1 % na obchod, 5 % celkového otevřeného rizika a 10 % expozice na ticker
+(tedy přibližně 100 USD při účtu 1 000 USD).
 Každá pozice má povinný stop-loss; hranici 1 % na obchod nelze konfigurací překročit.
 Tyto hodnoty lze změnit
 v `.env`. Počáteční kapitál každého agenta lze změnit přímo v UI. Pokud už má agent

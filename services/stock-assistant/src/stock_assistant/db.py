@@ -1285,10 +1285,11 @@ class Repository:
                 (agent_id,),
             ).fetchone()["market_value"]
             current_equity = float(account["cash"]) + float(market_value)
-            if capital < current_equity - 1e-9:
+            market_value = float(market_value)
+            if capital < market_value - 1e-9:
                 connection.rollback()
                 raise ValueError(
-                    f"zachování historie vyžaduje kapitál nejméně {current_equity:.2f}"
+                    f"zachování historie vyžaduje kapitál nejméně {market_value:.2f}"
                 )
             connection.execute(
                 """UPDATE agent_accounts
