@@ -89,7 +89,7 @@ dostupné z internetu.
   vyžaduje růstové momentum a zvýšený relativní objem;
 - **Hybrid** – kombinuje trend s breakout/momentum podmínkou a vyšším skóre.
 
-Čtyři USA účty začínají standardně s 10 000 USD a čtyři evropské účty s 10 000 EUR.
+Čtyři USA účty začínají standardně se 100 000 USD a čtyři evropské účty se 100 000 EUR.
 Standardní agenti riskují nejvýše 0,5 % equity na obchod, nejvýše 2 % celého portfolia
 a nejvýše 20 % equity v jednom tickeru. Dva označené High Volatility účty používají
 maximálně 1 % na obchod, 5 % celkového otevřeného rizika a 35 % expozice na ticker.
@@ -97,6 +97,8 @@ Každá pozice má povinný stop-loss; hranici 1 % na obchod nelze konfigurací 
 Tyto hodnoty lze změnit
 v `.env`. Počáteční kapitál každého agenta lze změnit přímo v UI. Pokud už má agent
 pozice nebo historii, API vyžaduje výslovně potvrzený reset, aby se nic nesmazalo omylem.
+Pro navýšení kapitálu bez mazání historie použijte v dashboardu volbu „zachovat otevřené
+pozice, obchody i učení“.
 Jde o srovnání adaptivních obchodních strategií, nikoli o osm samostatných OpenAI modelů.
 Každý agent má vlastní trvale uložené váhy, historii lekcí a verzi politiky. Výchozí technické
 skóre tvoří 65 % rozhodnutí a naučený profil 35 %. Tvrdé podmínky strategie, stop-loss,

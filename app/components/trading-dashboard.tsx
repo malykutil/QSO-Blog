@@ -281,6 +281,7 @@ export function TradingDashboard() {
   const [capitalAgent, setCapitalAgent] = useState<TradingAgent | null>(null);
   const [capital, setCapital] = useState(10_000);
   const [resetHistory, setResetHistory] = useState(false);
+  const [preserveHistory, setPreserveHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dataSource, setDataSource] = useState<DashboardSource | null>(null);
 
@@ -333,6 +334,7 @@ export function TradingDashboard() {
     setCapitalAgent(agent);
     setCapital(agent.initial_cash);
     setResetHistory(Boolean(agent.open_positions.length || agent.closed_trades || agent.equity_curve.length));
+    setPreserveHistory(false);
   };
 
   const saveCapital = async () => {
@@ -346,7 +348,7 @@ export function TradingDashboard() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: dataSource === "local" ? "omit" : "same-origin",
-        body: JSON.stringify({ capital, reset_history: resetHistory }),
+        body: JSON.stringify({ capital, reset_history: resetHistory, preserve_history: preserveHistory }),
       });
       const payload = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null;
       if (!response.ok) throw new Error(payload?.error || payload?.detail || "Kapitál se nepodařilo uložit.");
@@ -547,6 +549,10 @@ export function TradingDashboard() {
             <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-600">
               <input type="checkbox" checked={resetHistory} onChange={(event) => setResetHistory(event.target.checked)} className="mt-1" />
               Resetovat otevřené pozice, obchody, equity křivku i naučený profil. Tuto akci nelze vrátit.
+            </label>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-slate-600">
+              <input type="checkbox" checked={preserveHistory} onChange={(event) => setPreserveHistory(event.target.checked)} className="mt-1" />
+              Navýšit PAPER kapitál a zachovat otevřené pozice, obchody i učení.
             </label>
             <div className="mt-7 flex justify-end gap-3">
               <button type="button" onClick={() => setCapitalAgent(null)} disabled={saving} className="rounded-xl border border-slate-300 px-4 py-2 font-semibold text-slate-700">Zrušit</button>

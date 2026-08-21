@@ -6,6 +6,7 @@ import { tradingBackendRequest } from "@/src/lib/trading-backend";
 type CapitalPayload = {
   capital?: unknown;
   reset_history?: unknown;
+  preserve_history?: unknown;
 };
 
 export async function PUT(request: NextRequest, context: RouteContext<"/api/trading/agents/[agentId]/capital">) {
@@ -31,12 +32,14 @@ export async function PUT(request: NextRequest, context: RouteContext<"/api/trad
   const payload = (await request.json().catch(() => null)) as CapitalPayload | null;
   const capital = payload?.capital;
   const resetHistory = payload?.reset_history;
+  const preserveHistory = payload?.preserve_history;
   if (
     typeof capital !== "number" ||
     !Number.isFinite(capital) ||
     capital < 100 ||
     capital > 1_000_000_000 ||
-    typeof resetHistory !== "boolean"
+    typeof resetHistory !== "boolean" ||
+    typeof preserveHistory !== "boolean"
   ) {
     return NextResponse.json({ error: "Neplatné nastavení kapitálu." }, { status: 400 });
   }
@@ -44,7 +47,7 @@ export async function PUT(request: NextRequest, context: RouteContext<"/api/trad
   try {
     const backendResponse = await tradingBackendRequest(`/api/agents/${numericAgentId}/capital`, {
       method: "PUT",
-      body: { capital, reset_history: resetHistory },
+      body: { capital, reset_history: resetHistory, preserve_history: preserveHistory },
     });
     const result = (await backendResponse.json().catch(() => null)) as Record<string, unknown> | null;
     if (!backendResponse.ok) {

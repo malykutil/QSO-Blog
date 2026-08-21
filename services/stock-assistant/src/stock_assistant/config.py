@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     log_path: Path = Path("logs/assistant.log")
     log_level: str = "INFO"
     initial_cash: float = Field(default=100_000.0, gt=0)
-    agent_initial_cash: float = Field(default=10_000.0, gt=0)
-    agent_europe_initial_cash: float = Field(default=10_000.0, gt=0)
+    agent_initial_cash: float = Field(default=100_000.0, gt=0)
+    agent_europe_initial_cash: float = Field(default=100_000.0, gt=0)
     agent_risk_per_trade: float = Field(default=0.005, ge=0.0025, le=0.01)
     agent_max_portfolio_risk: float = Field(default=0.02, gt=0, le=0.05)
     agent_max_positions: int = Field(default=5, ge=1, le=20)

@@ -103,6 +103,23 @@ def test_capital_api_refuses_silent_history_deletion(tmp_path, snapshot):
     assert accepted.json()["agent"]["equity"] == 20_000
 
 
+def test_capital_api_can_rebase_without_deleting_paper_history(tmp_path, snapshot):
+    client, repository, settings = make_client(tmp_path)
+    AgentLeague(repository, settings).process({snapshot.ticker: snapshot})
+    agent_id = int(repository.get_agent_accounts("US")[0]["id"])
+
+    response = client.put(
+        f"/api/agents/{agent_id}/capital",
+        json={"capital": 100_000, "reset_history": False, "preserve_history": True},
+    )
+
+    assert response.status_code == 200
+    state = repository.agent_runtime_state(agent_id)
+    assert state["equity"] == 100_000
+    assert len(state["positions"]) == 1
+    assert repository.get_agent_learning_state(agent_id)["trades_learned"] == 0
+
+
 def test_remote_dashboard_requires_bearer_token(tmp_path):
     settings = Settings(
         database_path=tmp_path / "paper.db",

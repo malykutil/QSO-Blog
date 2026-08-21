@@ -1263,6 +1263,41 @@ class Repository:
             )
             connection.commit()
 
+    def rebase_agent_capital(self, agent_id: int, capital: float) -> None:
+        """Increase PAPER capital while preserving positions, trades and learning."""
+        if not (capital > 0 and capital <= 1_000_000_000):
+            raise ValueError("kapitál musí být mezi 0 a 1 miliardou")
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            account = connection.execute(
+                "SELECT cash FROM agent_accounts WHERE id = ?", (agent_id,)
+            ).fetchone()
+            if account is None:
+                connection.rollback()
+                raise ValueError("agent neexistuje")
+            market_value = connection.execute(
+                """SELECT COALESCE(SUM(
+                           COALESCE(q.price, p.entry_price) * p.quantity
+                       ), 0) AS market_value
+                   FROM agent_positions p
+                   LEFT JOIN market_quotes q ON q.ticker = p.ticker
+                   WHERE p.agent_id = ?""",
+                (agent_id,),
+            ).fetchone()["market_value"]
+            current_equity = float(account["cash"]) + float(market_value)
+            if capital < current_equity - 1e-9:
+                connection.rollback()
+                raise ValueError(
+                    f"zachování historie vyžaduje kapitál nejméně {current_equity:.2f}"
+                )
+            connection.execute(
+                """UPDATE agent_accounts
+                   SET initial_cash = ?, cash = cash + ?, updated_at = ?
+                   WHERE id = ?""",
+                (capital, capital - current_equity, _utc_now(), agent_id),
+            )
+            connection.commit()
+
     def agent_dashboard(self) -> list[dict[str, object]]:
         dashboard: list[dict[str, object]] = []
         with self.connect() as connection:

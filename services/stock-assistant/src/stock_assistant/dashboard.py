@@ -21,6 +21,7 @@ class CapitalUpdate(BaseModel):
 
     capital: float = Field(gt=0, le=1_000_000_000)
     reset_history: bool = False
+    preserve_history: bool = False
 
 
 def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
@@ -99,11 +100,14 @@ def create_dashboard_app(repository: Repository, settings: Settings) -> FastAPI:
     ) -> dict[str, object]:
         require_access(request)
         try:
-            repository.reset_agent_capital(
-                agent_id,
-                payload.capital,
-                reset_history=payload.reset_history,
-            )
+            if payload.preserve_history:
+                repository.rebase_agent_capital(agent_id, payload.capital)
+            else:
+                repository.reset_agent_capital(
+                    agent_id,
+                    payload.capital,
+                    reset_history=payload.reset_history,
+                )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         logger.info(
