@@ -4,7 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { clearAttempts, getRetryAfterSeconds, registerFailedAttempt } from "@/src/lib/login-rate-limit";
 import { isSupabaseConfigured } from "@/src/lib/supabase";
-import { isSolarControlCredentials, SOLAR_CONTROL_COOKIE, getSolarControlCookieValue } from "@/src/lib/solar-auth";
+import {
+  createSolarControlSession,
+  isSolarControlCredentials,
+  SOLAR_CONTROL_COOKIE,
+  SOLAR_CONTROL_SESSION_MAX_AGE_SECONDS,
+} from "@/src/lib/solar-auth";
 
 const LOGIN_ERROR_MESSAGE = "Přihlášení se nezdařilo. Zkontroluj přihlašovací údaje a zkus to znovu.";
 const RATE_LIMIT_MESSAGE = "Příliš mnoho pokusů o přihlášení. Zkus to prosím za chvíli znovu.";
@@ -84,25 +89,40 @@ export async function POST(request: NextRequest) {
   const username = typeof (payload as { email?: unknown })?.email === "string" ? (payload as { email: string }).email.trim() : "";
   const password = normalizePassword((payload as { password?: unknown })?.password);
 
+  const ip = readClientIp(request);
+  const normalizedIdentity = username.trim().toLowerCase().slice(0, 254) || "unknown";
+  const ipKey = `login-ip:${ip}`;
+  const identityKey = `login-ip-identity:${ip}:${normalizedIdentity}`;
+  const existingCooldown = Math.max(getRetryAfterSeconds(ipKey), getRetryAfterSeconds(identityKey));
+
+  if (existingCooldown > 0) {
+    return buildResponse({ error: RATE_LIMIT_MESSAGE }, 429, withRateLimitHeaders(existingCooldown));
+  }
+
+  const registerFailure = () => Math.max(registerFailedAttempt(ipKey), registerFailedAttempt(identityKey));
+
   if (isSolarControlCredentials(username, password)) {
+    clearAttempts(ipKey);
+    clearAttempts(identityKey);
     const response = buildResponse({ ok: true, solarControl: true }, 200);
-    response.cookies.set(SOLAR_CONTROL_COOKIE, getSolarControlCookieValue(), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 12 });
+    response.cookies.set(SOLAR_CONTROL_COOKIE, createSolarControlSession(), {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: SOLAR_CONTROL_SESSION_MAX_AGE_SECONDS,
+      priority: "high",
+    });
     return response;
   }
 
   const email = normalizeEmail(username);
 
   if (!isValidEmail(email) || !isValidPassword(password)) {
-    return buildResponse({ error: LOGIN_ERROR_MESSAGE }, 400);
-  }
-
-  const ip = readClientIp(request);
-  const ipKey = `login-ip:${ip}`;
-  const identityKey = `login-ip-email:${ip}:${email}`;
-  const existingCooldown = Math.max(getRetryAfterSeconds(ipKey), getRetryAfterSeconds(identityKey));
-
-  if (existingCooldown > 0) {
-    return buildResponse({ error: RATE_LIMIT_MESSAGE }, 429, withRateLimitHeaders(existingCooldown));
+    const retryAfterSeconds = registerFailure();
+    return retryAfterSeconds > 0
+      ? buildResponse({ error: RATE_LIMIT_MESSAGE }, 429, withRateLimitHeaders(retryAfterSeconds))
+      : buildResponse({ error: LOGIN_ERROR_MESSAGE }, 400);
   }
 
   const cookieStore = await cookies();
@@ -126,7 +146,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    const retryAfterSeconds = Math.max(registerFailedAttempt(ipKey), registerFailedAttempt(identityKey));
+    const retryAfterSeconds = registerFailure();
 
     if (retryAfterSeconds > 0) {
       return buildResponse({ error: RATE_LIMIT_MESSAGE }, 429, withRateLimitHeaders(retryAfterSeconds));
@@ -140,3 +160,4 @@ export async function POST(request: NextRequest) {
 
   return buildResponse({ ok: true }, 200);
 }
+
