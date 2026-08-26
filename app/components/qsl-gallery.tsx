@@ -129,14 +129,22 @@ export function QslGallery() {
     }
 
     let mounted = true;
-    const initialize = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (mounted) {
-        setUserId(user?.id ?? null);
-      }
-      await loadCards();
+    const initialize = () => {
+      // Public gallery cards must not wait for an optional auth lookup.
+      // A stalled auth request (for example during a self-hosted restart)
+      // should never leave the public gallery stuck on its loading state.
+      void loadCards();
+      void supabase.auth.getUser()
+        .then(({ data: { user } }) => {
+          if (mounted) {
+            setUserId(user?.id ?? null);
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setUserId(null);
+          }
+        });
     };
     void initialize();
     return () => {
@@ -318,3 +326,4 @@ export function QslGallery() {
     </div>
   );
 }
+
