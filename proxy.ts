@@ -3,11 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 
 import { isSupabaseConfigured } from "@/src/lib/supabase";
-import { getSolarControlCookieValue, SOLAR_CONTROL_COOKIE } from "@/src/lib/solar-auth";
+import { SOLAR_CONTROL_COOKIE, verifySolarControlSession } from "@/src/lib/solar-auth";
 
-const privatePaths = ["/dashboard", "/settings", "/bezpecnost", "/trading"];
+const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
 const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
-const tradingAdminEmail = (process.env.TRADING_ADMIN_EMAIL || "malykutil06@gmail.com").trim().toLowerCase();
 
 function isPrivatePath(pathname: string) {
   return privatePaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -15,10 +14,6 @@ function isPrivatePath(pathname: string) {
 
 function isSecurityPath(pathname: string) {
   return pathname === "/bezpecnost" || pathname.startsWith("/bezpecnost/");
-}
-
-function isTradingPath(pathname: string) {
-  return pathname === "/trading" || pathname.startsWith("/trading/");
 }
 
 function isSafeNextPath(pathnameWithQuery: string) {
@@ -129,7 +124,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
   const { pathname, search } = request.nextUrl;
   const needsAuth = isPrivatePath(pathname);
   const isSolarPath = pathname === "/solar" || pathname.startsWith("/solar/");
-  const hasSolarControl = request.cookies.get(SOLAR_CONTROL_COOKIE)?.value === getSolarControlCookieValue();
+  const hasSolarControl = verifySolarControlSession(request.cookies.get(SOLAR_CONTROL_COOKIE)?.value);
   const isLoginPath = pathname === "/login";
   let response = NextResponse.next({ request });
 
@@ -222,14 +217,8 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
     }
   }
 
-  if (isTradingPath(pathname) && user?.email?.trim().toLowerCase() !== tradingAdminEmail) {
-    const redirect = NextResponse.redirect(new URL("/dashboard", request.url));
-    redirect.headers.set("Cache-Control", "no-store, max-age=0");
-    return redirect;
-  }
-
-  if (isLoginPath && (user || hasSolarControl)) {
-    const dashboardUrl = new URL(hasSolarControl && !user ? "/solar" : "/dashboard", request.url);
+  if (isLoginPath && user) {
+    const dashboardUrl = new URL("/dashboard", request.url);
     const redirect = NextResponse.redirect(dashboardUrl);
     redirect.headers.set("Cache-Control", "no-store, max-age=0");
     return redirect;
@@ -247,3 +236,4 @@ export const config = {
     "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)",
   ],
 };
+
