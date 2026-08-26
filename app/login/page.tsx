@@ -54,7 +54,8 @@ export default function LoginPage() {
       return;
     }
 
-    const nextPath = sanitizeNextPath(
+    const payload = (await response.json().catch(() => null)) as { solarControl?: boolean } | null;
+    const nextPath = payload?.solarControl ? "/solar" : sanitizeNextPath(
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next"),
     );
     router.push(nextPath);
@@ -147,3 +148,4 @@ export default function LoginPage() {
     </AppShell>
   );
 }
+
