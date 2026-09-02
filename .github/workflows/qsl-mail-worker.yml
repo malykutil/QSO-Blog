@@ -1,0 +1,23 @@
+name: QSL mail worker
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: qsl-mail-worker
+  cancel-in-progress: false
+
+jobs:
+  send-next-qsl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Process one queued QSL
+        env:
+          QSL_WORKER_SECRET: ${{ secrets.QSL_WORKER_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 120 \
+            -H "Authorization: Bearer ${QSL_WORKER_SECRET}" \
+            https://ok2mkj.cz/api/qsl/process-queue
