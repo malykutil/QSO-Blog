@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
@@ -80,24 +81,41 @@ function formatQsoDate(record: QsoRecord) {
   return record.timeOn ? `${formatted} v ${record.timeOn.slice(0, 5)} UTC` : formatted;
 }
 
+function formatQslPreviewDate(value: string) {
+  if (!value) {
+    return "--";
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("cs-CZ", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
 export function QslManager() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [items, setItems] = useState<QslQueueItem[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email: string | null }>({ connected: false, email: null });
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"" | QslStatus>("");
+  const [statusFilter, setStatusFilter] = useState<QslStatus>("ready");
   const [editingEmails, setEditingEmails] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [bulkLookupRunning, setBulkLookupRunning] = useState(false);
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkSendProgress, setBulkSendProgress] = useState({ current: 0, total: 0 });
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [callsignQuery, setCallsignQuery] = useState("");
   const [qsoMatches, setQsoMatches] = useState<QsoRecord[]>([]);
   const [qsoSearchLoading, setQsoSearchLoading] = useState(false);
   const [selectedQso, setSelectedQso] = useState<QsoRecord | null>(null);
   const [addingQso, setAddingQso] = useState(false);
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const [savingCustomCard, setSavingCustomCard] = useState(false);
+  const [customCard, setCustomCard] = useState({ callsign: "", qsoDate: "", timeOn: "", band: "", mode: "FT8", rstSent: "", rstRcvd: "" });
   const homeLocator = useSyncExternalStore(subscribeHomeLocator, readHomeLocator, getHomeLocatorServerSnapshot);
 
   const loadQueue = async () => {
@@ -109,8 +127,9 @@ export function QslManager() {
     }
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
 
     if (!user) {
       router.replace("/login");
@@ -134,6 +153,7 @@ export function QslManager() {
 
     const normalized = (data ?? []).map((row) => normalizeQslQueueItem(row));
     setItems(normalized);
+    setPreviewItemId((current) => (current && normalized.some((item) => item.id === current) ? current : normalized[0]?.id ?? null));
     setEditingEmails(Object.fromEntries(normalized.map((item) => [item.id, item.contactEmail])));
     setStatus(`Načteno ${normalized.length} QSL záznamů.`);
     setLoading(false);
@@ -142,6 +162,10 @@ export function QslManager() {
   useEffect(() => {
     void loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/auth/gmail/status", { cache: "no-store" }).then((response) => response.json()).then(setGmailStatus).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -189,7 +213,9 @@ export function QslManager() {
     const query = search.trim().toLowerCase();
 
     return items.filter((item) => {
-      const matchesStatus = !statusFilter || item.status === statusFilter;
+      const matchesStatus = statusFilter === "ready"
+        ? item.status === "ready" || item.status === "failed"
+        : item.status === statusFilter;
       const haystack = `${item.callsign} ${item.contactEmail} ${item.band} ${item.mode} ${item.locator}`.toLowerCase();
       const matchesSearch = !query || haystack.includes(query);
 
@@ -200,7 +226,7 @@ export function QslManager() {
   const summary = useMemo(
     () => ({
       total: items.length,
-      ready: items.filter((item) => item.status === "ready").length,
+      ready: items.filter((item) => item.status === "ready" || item.status === "failed").length,
       missing: items.filter((item) => item.status === "missing_email").length,
       sent: items.filter((item) => item.status === "sent").length,
     }),
@@ -214,6 +240,72 @@ export function QslManager() {
 
     return enrichQsoRecords([selectedQso], homeLocator)[0] ?? null;
   }, [homeLocator, selectedQso]);
+
+  const previewItem = useMemo(
+    () => items.find((item) => item.id === previewItemId) ?? items[0] ?? null,
+    [items, previewItemId],
+  );
+
+  useEffect(() => {
+    if (!previewItem) return;
+    setCustomCard({
+      callsign: previewItem.callsign,
+      qsoDate: previewItem.qsoDate,
+      timeOn: previewItem.timeOn.slice(0, 5),
+      band: previewItem.band,
+      mode: previewItem.mode || "FT8",
+      rstSent: previewItem.rstSent,
+      rstRcvd: previewItem.rstRcvd,
+    });
+  }, [previewItem]);
+
+  const saveCustomCard = async () => {
+    const supabase = getSupabaseBrowserClient();
+    const callsign = customCard.callsign.trim().toUpperCase();
+    const timeOn = customCard.timeOn.trim();
+
+    if (!supabase || !userId || !previewItem) {
+      setStatus("Vlastní údaje lze uložit až po přihlášení.");
+      return;
+    }
+    if (!callsign) {
+      setStatus("Volačka nesmí být prázdná.");
+      return;
+    }
+    if (timeOn && !/^([01]\d|2[0-3]):[0-5]\d$/.test(timeOn)) {
+      setStatus("Čas UTC zadej ve formátu HH:MM, například 15:59.");
+      return;
+    }
+
+    setSavingCustomCard(true);
+    const updatedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("qsl_queue")
+      .update({
+        callsign,
+        qso_date: customCard.qsoDate || null,
+        time_on: timeOn || null,
+        band: customCard.band.trim() || null,
+        mode: customCard.mode,
+        rst_sent: customCard.rstSent.trim().toUpperCase() || null,
+        rst_rcvd: customCard.rstRcvd.trim().toUpperCase() || null,
+        updated_at: updatedAt,
+      })
+      .eq("id", previewItem.id)
+      .eq("created_by", userId)
+      .select(qslQueueSelectFields)
+      .single();
+    setSavingCustomCard(false);
+
+    if (error || !data) {
+      setStatus(`Vlastní údaje se nepodařilo uložit: ${error?.message ?? "neznámá chyba"}`);
+      return;
+    }
+
+    const updated = normalizeQslQueueItem(data);
+    setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    setStatus(`Vlastní QSL pro ${updated.callsign} byl uložen a náhled aktualizován.`);
+  };
 
   const addSelectedQso = async () => {
     const supabase = getSupabaseBrowserClient();
@@ -422,6 +514,59 @@ export function QslManager() {
     await loadQueue();
   };
 
+  const sendAllQsl = async () => {
+    const eligibleQueue = items.filter((item) => {
+      const email = normalizeEmail(editingEmails[item.id] ?? item.contactEmail);
+      return item.status !== "sent" && isValidEmail(email);
+    });
+    const queue = eligibleQueue.slice(0, 15);
+
+    if (!queue.length) {
+      setStatus("Ve frontě není žádný neodeslaný QSL lístek s platným e-mailem.");
+      return;
+    }
+
+    setBulkSending(true);
+    setBulkSendProgress({ current: 0, total: queue.length });
+    setStatus(`Zařazuji ${queue.length} QSL lístků do serverové fronty…`);
+
+    try {
+      const response = await fetch("/api/qsl/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          items: queue.map((item) => ({
+            queueId: item.id,
+            email: normalizeEmail(editingEmails[item.id] ?? item.contactEmail),
+          })),
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        queued?: number;
+        intervalMinutes?: number;
+      } | null;
+
+      if (!response.ok) {
+        setStatus(payload?.error ?? "QSL lístky se nepodařilo zařadit do fronty.");
+      } else {
+        const queued = payload?.queued ?? queue.length;
+        setBulkSendProgress({ current: queued, total: queue.length });
+        setStatus(
+          `${queued} QSL lístků je v serverové frontě. Web odešle jeden přibližně každých ${payload?.intervalMinutes ?? 10} minut; počítač můžeš vypnout.`
+          + (eligibleQueue.length > queue.length ? ` Dalších ${eligibleQueue.length - queue.length} zatím zařazeno nebylo.` : ""),
+        );
+      }
+    } catch {
+      setStatus("Serverová fronta není dostupná. Žádný e-mail nebyl odeslán.");
+    } finally {
+      setBusyId(null);
+      setBulkSending(false);
+      await loadQueue();
+    }
+  };
+
   const lookupAllEmails = async () => {
     const hamqthSettings = readHamqthSettings();
     const qrzSettings = readQrzSettings();
@@ -528,6 +673,232 @@ export function QslManager() {
         </div>
       </section>
 
+      <section id="qsl-nahled" className="glass-panel scroll-mt-6 overflow-hidden rounded-[2.2rem]">
+        <div className="grid xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.72fr)]">
+          <div className="bg-slate-950 p-4 sm:p-6 lg:p-8">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-white">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-200/70">Náhled před odesláním</p>
+                <h2 className="mt-2 font-display text-3xl">Tvůj digitální QSL lístek</h2>
+              </div>
+              {previewItem ? (
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={`/api/qsl/preview/${encodeURIComponent(previewItem.id)}?v=${encodeURIComponent(previewItem.updatedAt)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full border border-white/25 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+                  >
+                    Otevřít PNG
+                  </a>
+                  <a
+                    href={`/api/qsl/preview/${encodeURIComponent(previewItem.id)}?download=1`}
+                    download={`QSL-OK2MKJ-${previewItem.callsign}.png`}
+                    className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-sky-100"
+                  >
+                    Uložit QSL
+                  </a>
+                  <a
+                    href="/qsl-template.png"
+                    download="QSL-OK2MKJ-prazdna.png"
+                    className="rounded-full border border-amber-200/60 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-950 transition hover:bg-amber-100"
+                  >
+                    Stáhnout prázdnou kartu
+                  </a>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-[#d9c7a5] shadow-[0_28px_60px_rgba(0,0,0,0.35)]">
+              {previewItem ? (
+                <Image
+                  key={`${previewItem.id}-${previewItem.updatedAt}`}
+                  src={`/api/qsl/preview/${encodeURIComponent(previewItem.id)}?v=${encodeURIComponent(previewItem.updatedAt)}`}
+                  alt={`Náhled QSL lístku OK2MKJ pro ${previewItem.callsign}`}
+                  width={1536}
+                  height={1024}
+                  unoptimized
+                  className="h-auto w-full"
+                  priority
+                />
+              ) : (
+                <Image
+                  src="/qsl-template.png"
+                  alt="Prázdná šablona QSL lístku OK2MKJ"
+                  width={1536}
+                  height={1024}
+                  className="h-auto w-full opacity-75"
+                  priority
+                />
+              )}
+            </div>
+            {!previewItem ? (
+              <p className="mt-4 text-sm leading-6 text-slate-300">Přidej nebo synchronizuj první QSO. Potom se zde ukáže karta vyplněná skutečnými údaji.</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col bg-white/80 p-6 md:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Údaje na lístku</p>
+            {previewItem ? (
+              <>
+                <div className="mt-5 flex items-start justify-between gap-4 border-b border-slate-900/10 pb-5">
+                  <div>
+                    <p className="font-display text-5xl text-slate-950">{previewItem.callsign}</p>
+                    <p className="mt-2 text-sm text-slate-500">Protistanice · {previewItem.locator || "lokátor neuveden"}</p>
+                  </div>
+                  <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-semibold ${getStatusClasses(previewItem.status)}`}>
+                    {getQslStatusLabel(previewItem.status)}
+                  </span>
+                </div>
+
+                <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-5">
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">Datum spojení</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{formatQslPreviewDate(previewItem.qsoDate)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">Čas UTC</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{previewItem.timeOn?.slice(0, 5) || "--"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">Pásmo</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{previewItem.band || "--"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">Mód</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{previewItem.mode || "--"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">RST odeslaný</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{previewItem.rstSent || "--"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">RST přijatý</dt>
+                    <dd className="mt-1.5 font-semibold text-slate-950">{previewItem.rstRcvd || "--"}</dd>
+                  </div>
+                </dl>
+
+                <div className="mt-6 rounded-[1.25rem] bg-slate-100 p-4">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-500">Příjemce</p>
+                  <p className="mt-2 break-all text-sm font-semibold text-slate-800">{previewItem.contactEmail || "E-mail zatím není dohledaný"}</p>
+                </div>
+
+                <div className="mt-5 rounded-[1.25rem] border border-sky-200 bg-sky-50/80 p-4">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-sky-800">Vlastní údaje na kartě</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <label className="col-span-2 text-xs font-semibold text-slate-700">
+                      Volačka
+                      <input
+                        value={customCard.callsign}
+                        onChange={(event) => setCustomCard((current) => ({ ...current, callsign: event.target.value.toUpperCase() }))}
+                        maxLength={24}
+                        className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 text-base font-semibold uppercase outline-none focus:border-sky-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700">
+                      Datum spojení
+                      <input
+                        type="date"
+                        value={customCard.qsoDate}
+                        onChange={(event) => setCustomCard((current) => ({ ...current, qsoDate: event.target.value }))}
+                        className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 outline-none focus:border-sky-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700">
+                      Čas UTC
+                      <input
+                        type="time"
+                        value={customCard.timeOn}
+                        onChange={(event) => setCustomCard((current) => ({ ...current, timeOn: event.target.value }))}
+                        className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 outline-none focus:border-sky-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700">
+                      Pásmo
+                      <input
+                        value={customCard.band}
+                        onChange={(event) => setCustomCard((current) => ({ ...current, band: event.target.value }))}
+                        list="qsl-band-options"
+                        placeholder="Např. 20m"
+                        maxLength={16}
+                        className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 font-semibold outline-none focus:border-sky-500"
+                      />
+                      <datalist id="qsl-band-options">
+                        <option value="160m" />
+                        <option value="80m" />
+                        <option value="60m" />
+                        <option value="40m" />
+                        <option value="30m" />
+                        <option value="20m" />
+                        <option value="17m" />
+                        <option value="15m" />
+                        <option value="12m" />
+                        <option value="10m" />
+                        <option value="6m" />
+                        <option value="2m" />
+                        <option value="70cm" />
+                      </datalist>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700">
+                      Mód
+                      <select
+                        value={customCard.mode}
+                        onChange={(event) => setCustomCard((current) => ({ ...current, mode: event.target.value }))}
+                        className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 font-semibold outline-none focus:border-sky-500"
+                      >
+                        <option value="FT8">FT8</option>
+                        <option value="SSB">SSB</option>
+                        <option value="CW">CW</option>
+                      </select>
+                    </label>
+                    <div className="col-span-2 grid grid-cols-2 gap-2">
+                      <label className="text-xs font-semibold text-slate-700">
+                        RST TX
+                        <input
+                          value={customCard.rstSent}
+                          onChange={(event) => setCustomCard((current) => ({ ...current, rstSent: event.target.value }))}
+                          maxLength={8}
+                          className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 uppercase outline-none focus:border-sky-500"
+                        />
+                      </label>
+                      <label className="text-xs font-semibold text-slate-700">
+                        RST RX
+                        <input
+                          value={customCard.rstRcvd}
+                          onChange={(event) => setCustomCard((current) => ({ ...current, rstRcvd: event.target.value }))}
+                          maxLength={8}
+                          className="mt-1.5 w-full rounded-xl border border-slate-900/10 bg-white px-3 py-2.5 uppercase outline-none focus:border-sky-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveCustomCard()}
+                    disabled={savingCustomCard}
+                    className="mt-4 w-full rounded-full bg-sky-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:opacity-60"
+                  >
+                    {savingCustomCard ? "Ukládám…" : "Uložit vlastní údaje"}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => document.getElementById("qsl-fronta")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  className="mt-auto pt-6 text-left text-sm font-semibold text-sky-800 transition hover:text-sky-600"
+                >
+                  Vybrat jiný QSL ve frontě ↓
+                </button>
+              </>
+            ) : (
+              <div className="mt-5 rounded-[1.25rem] border border-dashed border-slate-300 p-5 text-sm leading-6 text-slate-600">
+                Ve frontě zatím není žádné spojení k náhledu.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {isAddPanelOpen ? (
         <section className="glass-panel overflow-hidden rounded-[2rem] p-6 md:p-8">
           <div className="flex flex-col gap-2 border-b border-slate-900/8 pb-6">
@@ -625,44 +996,61 @@ export function QslManager() {
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="glass-panel rounded-[2rem] p-6">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Celkem</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.total}</p>
-        </div>
-        <div className="glass-panel rounded-[2rem] p-6">
+      <section className="grid gap-4 md:grid-cols-3">
+        <button type="button" onClick={() => setStatusFilter("ready")} className={`rounded-[2rem] p-6 text-left transition ${statusFilter === "ready" ? "bg-sky-950 text-white shadow-xl" : "glass-panel text-slate-950 hover:bg-sky-50"}`}>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Připraveno</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.ready}</p>
-        </div>
-        <div className="glass-panel rounded-[2rem] p-6">
+          <p className="mt-3 text-3xl font-semibold">{summary.ready}</p>
+          <p className={`mt-2 text-xs ${statusFilter === "ready" ? "text-sky-200" : "text-slate-500"}`}>Kliknutím zobrazíš připravené a chybové záznamy</p>
+        </button>
+        <button type="button" onClick={() => setStatusFilter("missing_email")} className={`rounded-[2rem] p-6 text-left transition ${statusFilter === "missing_email" ? "bg-amber-700 text-white shadow-xl" : "glass-panel text-slate-950 hover:bg-amber-50"}`}>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">Chybí e-mail</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-950">{summary.missing}</p>
-        </div>
-        <div className="rounded-[2rem] border border-emerald-500/30 bg-emerald-950 p-6 text-white shadow-[0_20px_50px_rgba(6,78,59,0.18)]">
+          <p className="mt-3 text-3xl font-semibold">{summary.missing}</p>
+          <p className={`mt-2 text-xs ${statusFilter === "missing_email" ? "text-amber-100" : "text-slate-500"}`}>Spojení, u kterých je potřeba doplnit adresu</p>
+        </button>
+        <button type="button" onClick={() => setStatusFilter("sent")} className={`rounded-[2rem] p-6 text-left transition ${statusFilter === "sent" ? "bg-emerald-950 text-white shadow-xl" : "glass-panel text-slate-950 hover:bg-emerald-50"}`}>
           <p className="text-xs uppercase tracking-[0.35em] text-emerald-200">Odesláno</p>
           <p className="mt-3 text-3xl font-semibold">{summary.sent}</p>
-        </div>
+          <p className={`mt-2 text-xs ${statusFilter === "sent" ? "text-emerald-200" : "text-slate-500"}`}>Historie úspěšně odeslaných QSL lístků</p>
+        </button>
       </section>
 
-      <section className="glass-panel rounded-[2rem] p-6 md:p-8">
-        <div className="grid gap-4 rounded-[1.6rem] bg-slate-100/80 p-4 md:grid-cols-[1fr_16rem]">
+      <section id="qsl-fronta" className="glass-panel scroll-mt-6 rounded-[2rem] p-6 md:p-8">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-100/80 p-4">
+          <div><p className="text-xs uppercase tracking-[0.25em] text-slate-500">Odesílání</p><p className="mt-1 text-sm text-slate-700">{gmailStatus.connected ? `Gmail připojen: ${gmailStatus.email || "ověřený účet"}` : "Gmail zatím není připojený."}</p></div>
+          <div className="flex flex-wrap gap-2">
+            {bulkSending ? (
+              <button
+                type="button"
+                disabled
+                className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-500"
+              >
+                Zařazuji ({bulkSendProgress.current}/{bulkSendProgress.total})
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void sendAllQsl()}
+                disabled={syncing || bulkLookupRunning}
+                className="rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Zařadit k postupnému odeslání
+              </button>
+            )}
+            <a href="/api/auth/gmail/start" className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700">{gmailStatus.connected ? "Připojit jiný Gmail" : "Přihlásit Gmail"}</a>
+          </div>
+        </div>
+        <div className="rounded-[1.6rem] bg-slate-100/80 p-4">
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Hledat callsign, e-mail, pásmo nebo lokátor"
             className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
           />
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as "" | QslStatus)}
-            className="rounded-[1rem] border border-slate-900/10 bg-white px-4 py-3 outline-none"
-          >
-            <option value="">Všechny stavy</option>
-            <option value="missing_email">Chybí e-mail</option>
-            <option value="ready">Připraveno</option>
-            <option value="sent">Odesláno</option>
-            <option value="failed">Chyba</option>
-          </select>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <p className="text-sm font-semibold text-slate-800">{getQslStatusLabel(statusFilter)} · {filteredItems.length} záznamů</p>
+          <p className="text-xs text-slate-500">Celkem ve frontě: {summary.total}</p>
         </div>
 
         {status ? (
@@ -710,6 +1098,18 @@ export function QslManager() {
                   <td className="px-4 py-4 text-slate-700">{formatDateTime(item.sentAt)}</td>
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewItemId(item.id);
+                          window.requestAnimationFrame(() => {
+                            document.getElementById("qsl-nahled")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          });
+                        }}
+                        className="rounded-full border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900 transition hover:bg-sky-100"
+                      >
+                        Náhled
+                      </button>
                       <button
                         type="button"
                         onClick={() => void lookupEmail(item)}

@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import sharp from "sharp";
 
 export type QslCardInput = {
@@ -47,7 +49,9 @@ function formatQslDate(value: string) {
     month: "2-digit",
     year: "numeric",
     timeZone: "Europe/Prague",
-  }).format(parsed);
+  })
+    .format(parsed)
+    .replace(/\s/g, "");
 }
 
 function formatUtc(value: string) {
@@ -71,54 +75,54 @@ function formatRst(sent: string, received: string) {
   return sent || received || "--";
 }
 
-function buildOverlaySvg(input: QslCardInput) {
-  const date = escapeXml(formatQslDate(input.qsoDate));
-  const utc = escapeXml(formatUtc(input.timeOn));
-  const mhz = escapeXml(formatBandAsMhz(input.band));
-  const mode = escapeXml(input.mode || "--");
-  const rst = escapeXml(formatRst(input.rstSent, input.rstRcvd));
-  const callsign = escapeXml(input.callsign.toUpperCase() || "--");
+async function renderTextLayer({
+  text,
+  fontSize,
+  color,
+  italic = false,
+}: {
+  text: string;
+  fontSize: number;
+  color: string;
+  italic?: boolean;
+}) {
+  const content = `${italic ? "<i>" : ""}<span foreground="${color}" weight="bold">${escapeXml(text)}</span>${italic ? "</i>" : ""}`;
 
-  return `
-    <svg width="1536" height="1024" viewBox="0 0 1536 1024" xmlns="http://www.w3.org/2000/svg">
-      <style>
-        .tableText {
-          fill: #102d4a;
-          font-family: "Arial Narrow", Arial, sans-serif;
-          font-weight: 800;
-          font-size: 30px;
-          letter-spacing: 0;
-        }
-
-        .handText {
-          fill: #173c89;
-          font-family: "Segoe Print", "Comic Sans MS", cursive;
-          font-weight: 600;
-          font-size: 42px;
-          letter-spacing: 0;
-        }
-      </style>
-
-      <text x="150" y="646" text-anchor="middle" class="tableText">${date}</text>
-      <text x="310" y="646" text-anchor="middle" class="tableText">${utc}</text>
-      <text x="462" y="646" text-anchor="middle" class="tableText">${mhz}</text>
-      <text x="602" y="646" text-anchor="middle" class="tableText">${mode}</text>
-      <text x="731" y="646" text-anchor="middle" class="tableText">${rst}</text>
-      <text x="84" y="746" class="handText">${callsign}</text>
-    </svg>
-  `;
+  return sharp({
+    text: {
+      text: content,
+      font: `Geist ${fontSize}`,
+      fontfile: join(process.cwd(), "public", "qsl-font.ttf"),
+      rgba: true,
+    },
+  })
+    .png()
+    .toBuffer({ resolveWithObject: true });
 }
 
 export async function renderQslCardPng(template: Buffer, input: QslCardInput) {
-  const overlay = Buffer.from(buildOverlaySvg(input));
+  const [date, utc, mhz, mode, rst, callsign] = await Promise.all([
+    renderTextLayer({ text: formatQslDate(input.qsoDate), fontSize: 30, color: "#102d4a" }),
+    renderTextLayer({ text: formatUtc(input.timeOn), fontSize: 30, color: "#102d4a" }),
+    renderTextLayer({ text: formatBandAsMhz(input.band), fontSize: 30, color: "#102d4a" }),
+    renderTextLayer({ text: input.mode || "--", fontSize: 30, color: "#102d4a" }),
+    renderTextLayer({ text: formatRst(input.rstSent, input.rstRcvd), fontSize: 30, color: "#102d4a" }),
+    renderTextLayer({
+      text: input.callsign.toUpperCase() || "--",
+      fontSize: 42,
+      color: "#173c89",
+      italic: true,
+    }),
+  ]);
 
   return sharp(template)
     .composite([
-      {
-        input: overlay,
-        left: 0,
-        top: 0,
-      },
+      { input: date.data, left: Math.round(150 - date.info.width / 2), top: 611 },
+      { input: utc.data, left: Math.round(310 - utc.info.width / 2), top: 611 },
+      { input: mhz.data, left: Math.round(462 - mhz.info.width / 2), top: 611 },
+      { input: mode.data, left: Math.round(602 - mode.info.width / 2), top: 611 },
+      { input: rst.data, left: Math.round(731 - rst.info.width / 2), top: 611 },
+      { input: callsign.data, left: 84, top: 711 },
     ])
     .png()
     .toBuffer();
