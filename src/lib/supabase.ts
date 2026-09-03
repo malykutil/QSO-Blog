@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { resilientFetch } from "@/src/lib/resilient-fetch";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -32,6 +33,7 @@ export function getSupabaseBrowserClient() {
     browserClient = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { fetch: resilientFetch } },
     );
   }
 
@@ -43,5 +45,7 @@ export function getSupabasePublicServerClient() {
     return null;
   }
 
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    global: { fetch: resilientFetch },
+  });
 }

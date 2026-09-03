@@ -7,6 +7,8 @@ import { DailySummary, BatteryStatus, EnergyFlow, OverviewMetrics, SensorGrid, U
 import { EventTimeline } from "@/app/components/solar-event-timeline";
 import { SolarHistoryControls, type HistoryRange } from "@/app/components/solar-history-controls";
 import { SolarAiSummary } from "@/app/components/solar-ai-summary";
+import { SolarAutoManagerCard } from "@/app/components/solar-auto-manager-card";
+import { SolarSecurityStatus } from "@/app/components/solar-security-status";
 import { RelayCard, RelayConfirmationDialog } from "@/app/components/solar-relay-card";
 import { AlertList, SolarPanel } from "@/app/components/solar-ui";
 import { InteractiveHistoryChart } from "@/app/components/history-chart";
@@ -28,15 +30,20 @@ type SolarPayload = {
   energySummary: SolarEnergySummary;
   relays: SolarRelayState;
   relayUpdatedAt: Partial<Record<SolarRelayName, string>>;
+  relayModes: Partial<Record<SolarRelayName, "MANUAL_OFF" | "AUTO" | "MANUAL_ON">>;
+  relayEvents: Array<{ id: number; occurredAt: string; label: string }>;
   canControl: boolean;
   alarmActive: boolean;
   alarmResetPending: boolean;
   relayCyclePending: boolean;
+  security: { canRemoteControl: boolean; reasonCode: string | null; reason: string; telemetryFresh: boolean; controllerOnline: boolean; safetyControllerOk: boolean; emergencyStopClear: boolean; batteryPairConsistent: boolean; commandAuthenticationConfigured: boolean; localRemoteControlEnabled: boolean };
+  commands?: Array<{ id: string; status: string; target: string; requested_state: boolean | null; reason_code: string | null; physically_verified: boolean }>;
 };
 
 type WeatherPayload = {
   forecastSource?: string;
-  daily?: Array<{ estimatedKwh?: number | null }>;
+  daily?: Array<{ date?: string; min?: number | null; max?: number | null; weatherCode?: number | null; estimatedKwh?: number | null; baseEstimatedKwh?: number | null }>;
+  localWeather?: { summary?: string; adjustmentFactor?: number | null } | null;
 };
 
 const emptySummary: SolarEnergySummary = {
@@ -74,6 +81,7 @@ function normalizePayload(payload: SolarPayload): SolarPayload {
     history: payload.history ?? [],
     relays: { ...defaultSolarRelayState, ...(payload.relays ?? {}) },
     relayUpdatedAt: payload.relayUpdatedAt ?? {},
+    relayEvents: payload.relayEvents ?? [],
     energySummary: payload.energySummary ?? emptySummary,
     alarmActive: Boolean(payload.alarmActive),
     alarmResetPending: Boolean(payload.alarmResetPending),
@@ -93,6 +101,23 @@ function formatDateTime(value: string | null | undefined) {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function formatForecastDate(value: string | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("cs-CZ", { weekday: "short", day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
+}
+
+function weatherCodeLabel(code: number | null | undefined) {
+  if (code === 0) return "Jasno";
+  if (code === 1 || code === 2) return "Částečně oblačno";
+  if (code === 3) return "Zataženo";
+  if (code === 45 || code === 48) return "Mlha";
+  if (code !== null && code !== undefined && code >= 51 && code <= 67) return "Déšť";
+  if (code !== null && code !== undefined && code >= 71 && code <= 77) return "Sníh";
+  if (code !== null && code !== undefined && code >= 80 && code <= 82) return "Přeháňky";
+  if (code !== null && code !== undefined && code >= 95) return "Bouřky";
+  return "Počasí není dostupné";
 }
 
 export default function SolarPage() {
@@ -213,16 +238,12 @@ export default function SolarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ relay, isOn: desiredState }),
       });
-      if (!command.ok) throw new Error("command");
-      const verification = await fetch("/api/solar?range=24h&latest=1", { cache: "no-store" });
-      if (!verification.ok) throw new Error("verification");
-      const verifiedPayload = normalizePayload(await verification.json() as SolarPayload);
-      if (verifiedPayload.relays[relay] !== desiredState) throw new Error("state-mismatch");
-      setPayload((current) => ({ ...verifiedPayload, history: current?.history ?? [] }));
+      const result = await command.json() as { commandId?: string; reasonCode?: string; error?: string };
+      if (!command.ok) throw new Error(result.error || result.reasonCode || "Příkaz byl odmítnut.");
       setNotice(`${SOLAR_RELAY_META[relay].label}: požadavek na ${desiredState ? "zapnutí" : "vypnutí"} byl uložen. Fyzický stav zařízení zatím nelze samostatně ověřit.`);
-    } catch {
+    } catch (commandError) {
       const message = `${SOLAR_RELAY_META[relay].label}: server nepotvrdil uložení požadovaného stavu.`;
-      setRelayErrors((current) => ({ ...current, [relay]: message }));
+      setRelayErrors((current) => ({ ...current, [relay]: commandError instanceof Error ? commandError.message : message }));
     } finally {
       setBusyRelay(null);
     }
@@ -283,7 +304,9 @@ export default function SolarPage() {
       <div className="mt-4"><AlertList alerts={alerts} /></div>
       {error ? <p className="solar-alert solar-alert--danger">{error}</p> : null}
       {notice ? <p className="solar-alert solar-alert--info">{notice}</p> : null}
-      {payload ? <div className="mt-4"><SolarAiSummary telemetry={telemetry} history={history} summary={summary} relays={payload.relays} forecast={{ estimatedKwh: weather?.daily?.[0]?.estimatedKwh ?? null, source: weather?.forecastSource ?? null }} offline={freshness === "offline"} alarmActive={fireAlarmActive} /></div> : null}
+      {payload?.security ? <div className="mt-4"><SolarSecurityStatus status={payload.security} /></div> : null}
+      {payload ? <div className="mt-4"><SolarAutoManagerCard /></div> : null}
+      {payload ? <div className="mt-4"><SolarAiSummary telemetry={telemetry} history={history} summary={summary} relays={payload.relays} forecast={{ estimatedKwh: weather?.daily?.[0]?.estimatedKwh ?? null, source: weather?.forecastSource ?? null, localSummary: weather?.localWeather?.summary ?? null, adjustmentFactor: weather?.localWeather?.adjustmentFactor ?? null }} offline={freshness === "offline"} alarmActive={fireAlarmActive} /></div> : null}
       {loading && !payload ? <div className="solar-skeleton h-56" aria-label="Načítám telemetrii" /> : <div className="mt-4"><OverviewMetrics telemetry={telemetry} freshness={freshness} now={now} /></div>}
 
       <nav className="solar-section-nav" aria-label="Sekce dashboardu">
@@ -300,7 +323,7 @@ export default function SolarPage() {
           {freshness !== "online" ? <p className="solar-alert solar-alert--warning mt-4">Ovládání je zablokováno, protože telemetrie není aktuální.</p> : null}
           {fireAlarmActive ? <div className="solar-alert solar-alert--danger mt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><strong>Ovládání je zablokováno aktivním MQ-9 poplachem.</strong><p className="mt-1">Reset proveď až po fyzické kontrole objektu. Relé zůstanou vypnutá.</p></div>{payload?.canControl ? <button type="button" className="solar-alarm-reset" disabled={alarmResetBusy || payload.alarmResetPending || freshness !== "online"} onClick={() => void requestAlarmReset()}>{payload.alarmResetPending ? "Čekám na RPi…" : alarmResetBusy ? "Odesílám…" : "Potvrdit a vypnout poplach"}</button> : <a href="/login" className="solar-link">Přihlásit pro vypnutí</a>}</div>{alarmResetError ? <p className="mt-3 font-semibold">{alarmResetError}</p> : null}</div> : null}
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/60 bg-amber-50/70 p-4 dark:bg-amber-950/20"><div className="min-w-0 flex-1"><p className="font-semibold text-[var(--solar-text)]">Rychlý test relé · 10 s</p><p className="mt-1 text-sm leading-5 text-[var(--solar-muted)]">Testuje pouze GPIO 17, 4, 27, 22, 23 a 25. Solární větve na GPIO 24 a 18 zůstávají nedotčené.</p></div><button type="button" className="solar-alarm-reset" disabled={!payload?.canControl || freshness !== "online" || fireAlarmActive || cycleBusy || Boolean(payload?.relayCyclePending)} onClick={() => void requestRelayCycle()}>{payload?.relayCyclePending ? "Test právě probíhá…" : cycleBusy ? "Odesílám…" : "Spustit test relé"}</button></div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">{(Object.keys(defaultSolarRelayState) as SolarRelayName[]).map((relay) => <RelayCard key={relay} relay={relay} requestedState={payload?.relays[relay] ?? false} updatedAt={payload?.relayUpdatedAt[relay]} disabled={!payload?.canControl || busyRelay !== null || fireAlarmActive} busy={busyRelay === relay} error={relayErrors[relay]} onToggle={requestRelayCommand} />)}</div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">{(Object.keys(defaultSolarRelayState) as SolarRelayName[]).map((relay) => <RelayCard key={relay} relay={relay} requestedState={payload?.relays[relay] ?? false} mode={payload?.relayModes[relay]} updatedAt={payload?.relayUpdatedAt[relay]} disabled={!payload?.canControl || busyRelay !== null || fireAlarmActive} busy={busyRelay === relay} error={relayErrors[relay]} onToggle={requestRelayCommand} />)}</div>
         </SolarPanel>
 
         <DailySummary summary={summary} />
@@ -314,15 +337,28 @@ export default function SolarPage() {
             <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart {...chartHistoryProps} series={[["battery_voltage", "Baterie", "#2563eb"], ["load_voltage_v", "Zátěž", "#dc2626"]]} title="Napětí baterie a zátěže" unit="V" /><InteractiveHistoryChart {...chartHistoryProps} series={[["load_current_a", "Baterie", "#7c3aed"], ["battery_flow_current_a", "Zátěž", "#38bdf8"]]} title="Proud baterie a zátěže" unit="A" /></div>
             <SolarPanel eyebrow="Baterie" title="Procento nabití"><p className="solar-alert solar-alert--info mt-4">Historie stavu nabití zatím není dostupná. Datový model nemá údaj z BMS ani kalibrované procento.</p></SolarPanel>
             <InteractiveHistoryChart {...chartHistoryProps} series={[["object_temperature", "Uvnitř", "#ea580c"], ["outside_temperature", "Venku", "#0284c7"], ["battery_temperature", "Baterie", "#7c3aed"], ["mppt_temperature", "MPPT", "#dc2626"]]} title="Teploty" unit="°C" />
-            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart {...chartHistoryProps} series={[["object_humidity", "Uvnitř · D11", "#0891b2"], ["mppt_humidity", "MPPT · D12", "#7c3aed"]]} title="Vlhkost DHT11" unit="%" /><InteractiveHistoryChart {...chartHistoryProps} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
+            <div className="grid gap-4 xl:grid-cols-2"><InteractiveHistoryChart {...chartHistoryProps} series={[["object_humidity", "Uvnitř · D11", "#0891b2"], ["outside_humidity", "Venkovní · BME280", "#0284c7"], ["mppt_humidity", "MPPT · D12", "#7c3aed"]]} title="Vlhkost" unit="%" /><InteractiveHistoryChart {...chartHistoryProps} series={[["outside_pressure", "Venkovní tlak", "#64748b"]]} title="Atmosférický tlak" unit="hPa" /></div>
             <InteractiveHistoryChart {...chartHistoryProps} series={[["mq9_raw", "MQ-9", "#f97316"]]} title="CO a hořlavé plyny (MQ-9)" unit="RAW" referenceLines={[[MQ9_CRITICAL_RAW + 1, "Hranice poplachu", "#dc2626"]]} />
           </>}
         </section>
 
+        {weather ? <section id="predpoved" className="scroll-mt-24"><SolarPanel title="Předpověď počasí" eyebrow="Internetová předpověď doplněná lokálními čidly">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {(weather.daily ?? []).slice(0, 4).map((day, index) => <div key={day.date ?? index} className={`rounded-2xl p-4 ${index === 0 ? "bg-sky-100/80 dark:bg-sky-950/30" : "bg-white/70 dark:bg-black/15"}`}>
+              <p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">{index === 0 ? "Dnes" : formatForecastDate(day.date)}</p>
+              <p className="mt-2 text-lg font-semibold text-[var(--solar-text)]">{weatherCodeLabel(day.weatherCode)}</p>
+              <p className="mt-1 text-sm text-[var(--solar-muted)]">{day.min !== null && day.min !== undefined && day.max !== null && day.max !== undefined ? `${day.min.toFixed(0)}–${day.max.toFixed(0)} °C` : "Teplota není dostupná"}</p>
+              <p className="mt-3 text-xl font-semibold text-[var(--solar-text)]">{day.estimatedKwh === null || day.estimatedKwh === undefined ? "—" : `${day.estimatedKwh.toFixed(2)} kWh`}</p>
+              <p className="mt-1 text-xs text-[var(--solar-muted)]">odhad výroby</p>
+            </div>)}
+          </div>
+          <div className="mt-4 rounded-2xl bg-white/60 p-4 text-sm leading-6 text-[var(--solar-muted)] dark:bg-black/15"><strong className="text-[var(--solar-text)]">Lokální korekce:</strong> {weather.localWeather?.summary ? `${weather.localWeather.summary}.` : "Čidla zatím nemají dostatek dat."} {weather.localWeather?.adjustmentFactor !== null && weather.localWeather?.adjustmentFactor !== undefined ? `Odhad výroby je upraven na ${Math.round(weather.localWeather.adjustmentFactor * 100)} % internetové předpovědi.` : ""} <span className="ml-1">Zdroj: {weather.forecastSource ?? "internetová předpověď"}.</span></div>
+        </SolarPanel></section> : null}
+
         <SensorGrid telemetry={telemetry} />
 
         <section id="system" className="grid scroll-mt-24 gap-4 lg:grid-cols-2">
-          <EventTimeline relays={payload?.relays ?? defaultSolarRelayState} updatedAt={payload?.relayUpdatedAt ?? {}} />
+          <EventTimeline relays={payload?.relays ?? defaultSolarRelayState} updatedAt={payload?.relayUpdatedAt ?? {}} events={payload?.relayEvents ?? []} />
           <SolarPanel title="Stav dat a konfigurace" eyebrow="Systém"><dl className="solar-definition-list mt-4"><div><dt>Poslední kontakt</dt><dd>{formatDateTime(telemetry?.recorded_at)}</dd></div><div><dt>Vzorky v grafu</dt><dd>{history.length}</dd></div><div><dt>Dnešní unikátní vzorky</dt><dd>{summary.unique_samples}</dd></div><div><dt>Vynechané mezery</dt><dd>{summary.skipped_gaps}</dd></div><div><dt>Online limit</dt><dd>{SOLAR_MEASUREMENT_CONFIG.onlineAgeMs / 1000} s</dd></div><div><dt>Offline limit</dt><dd>{SOLAR_MEASUREMENT_CONFIG.delayedAgeMs / 60_000} min</dd></div><div><dt>Nízké napětí</dt><dd>{SOLAR_ALERT_THRESHOLDS.batteryLowVoltageV} V</dd></div><div><dt>MQ-9 poplach</dt><dd>RAW {MQ9_CRITICAL_RAW + 1}</dd></div></dl><p className="mt-4 text-xs leading-5 text-[var(--solar-muted)]">Historie se načítá pouze při změně časového rozsahu. Aktuální telemetrie a požadované stavy relé se obnovují samostatně každých 10 sekund.</p></SolarPanel>
         </section>
       </main>

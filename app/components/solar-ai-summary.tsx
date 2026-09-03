@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { SolarEnergyPoint, SolarEnergySummary, SolarRelayState } from "@/src/lib/solar-data";
 
-type Forecast = { estimatedKwh: number | null; source: string | null };
+type Forecast = { estimatedKwh: number | null; source: string | null; localSummary?: string | null; adjustmentFactor?: number | null };
 
 function finite(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -119,7 +119,7 @@ export function SolarAiSummary({ telemetry, history, summary, relays, forecast, 
       {effectiveSelectedHour ? <span className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-sm font-semibold text-[var(--solar-text)]">{hourLabel(effectiveSelectedHour)}</span> : <span className="text-sm text-[var(--solar-muted)]">Hodinová data nejsou dostupná.</span>}
     </div>
     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Teoreticky dnes</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{kwh(forecast.estimatedKwh)}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">{forecast.source ? `Zdroj: ${forecast.source}` : "Předpověď není dostupná"}</p></div>
+      <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Teoreticky dnes</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{kwh(forecast.estimatedKwh)}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">{forecast.source ? `Zdroj: ${forecast.source}` : "Předpověď není dostupná"}</p>{forecast.localSummary ? <p className="mt-2 text-xs leading-5 text-[var(--solar-muted)]">Lokální korekce {forecast.adjustmentFactor === null || forecast.adjustmentFactor === undefined ? "" : `${Math.round(forecast.adjustmentFactor * 100)} %`}: {forecast.localSummary}.</p> : null}</div>
       <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Dnes nabito</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{kwh(actualKwh)}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">Aktivní solární čas: {summary.active_charging_minutes} min</p></div>
       <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Spotřeba</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{wh(selectedEnergy.loadWh)}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">{selectedLabel} · podle znaménka proudu baterie</p></div>
       <div className="rounded-2xl bg-white/70 p-4 dark:bg-black/15"><p className="text-xs uppercase tracking-[0.16em] text-[var(--solar-muted)]">Baterie</p><p className="mt-2 text-2xl font-semibold text-[var(--solar-text)]">{batteryVoltage === null ? "—" : `${batteryVoltage.toFixed(2)} V`}</p><p className="mt-1 text-xs text-[var(--solar-muted)]">Solární proud: {solarCurrent === null ? "—" : `${solarCurrent.toFixed(2)} A`}</p></div>

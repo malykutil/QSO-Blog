@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdminClient, getSupabaseRouteClient } from "@/src/lib/supabase-server";
-import { defaultSolarRelayState, type SolarRelayName } from "@/src/lib/solar-data";
+import { defaultSolarRelayState, type SolarRelayName, type SolarTelemetry } from "@/src/lib/solar-data";
+import { enrichSolarTelemetry } from "@/src/lib/solar-energy";
 
 export const dynamic = "force-dynamic";
 
@@ -20,5 +21,8 @@ export async function GET() {
 
   const relays = { ...defaultSolarRelayState };
   for (const row of relaysResult.data ?? []) if (row.relay in relays) relays[row.relay as SolarRelayName] = Boolean(row.is_on);
-  return NextResponse.json({ telemetry: telemetryResult.data ?? null, relays }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  const telemetry = telemetryResult.data
+    ? enrichSolarTelemetry(telemetryResult.data as unknown as SolarTelemetry)
+    : null;
+  return NextResponse.json({ telemetry, relays }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

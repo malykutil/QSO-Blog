@@ -13,13 +13,38 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-export function EventTimeline({ relays, updatedAt }: { relays: SolarRelayState; updatedAt: Partial<Record<SolarRelayName, string>> }) {
-  const events = (Object.entries(updatedAt) as [SolarRelayName, string][])
+type ResetEvent = { id: number; occurredAt: string; label: string };
+
+export function EventTimeline({
+  relays,
+  updatedAt,
+  events: resetEvents = [],
+}: {
+  relays: SolarRelayState;
+  updatedAt: Partial<Record<SolarRelayName, string>>;
+  events?: ResetEvent[];
+}) {
+  const relayEvents = (Object.entries(updatedAt) as [SolarRelayName, string][])
     .filter(([, date]) => Boolean(date))
-    .sort((left, right) => new Date(right[1]).getTime() - new Date(left[1]).getTime())
-    .slice(0, 6);
+    .map(([relay, date]) => ({ type: "relay" as const, key: relay, date, relay }));
+  const events = [...relayEvents, ...resetEvents.map((event) => ({
+    type: "reset" as const,
+    key: `reset-${event.id}`,
+    date: event.occurredAt,
+    label: event.label,
+  }))]
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
+    .slice(0, 8);
+
   return <SolarPanel title="Poslední známé změny" eyebrow="Události relé">
-    {events.length ? <ol className="solar-timeline mt-4">{events.map(([relay, date]) => <li key={relay}><i className={relays[relay] ? "is-on" : ""} /><div><strong>{SOLAR_RELAY_META[relay].label}</strong><p>Požadovaný stav: {relays[relay] ? "zapnuto" : "vypnuto"}</p><time dateTime={date}>{formatDateTime(date)}</time></div></li>)}</ol> : <p className="solar-alert solar-alert--info mt-4">Databáze zatím neobsahuje historii událostí.</p>}
-    <p className="mt-4 text-xs leading-5 text-[var(--solar-muted)]">Aktuální databáze ukládá pouze poslední změnu každého relé, nikoliv kompletní časovou osu ani informaci, zda změnu provedla automatika.</p>
+    {events.length ? <ol className="solar-timeline mt-4">{events.map((event) => <li key={event.key}>
+      <i className={event.type === "relay" && relays[event.relay] ? "is-on" : ""} />
+      <div>
+        <strong>{event.type === "reset" ? event.label : SOLAR_RELAY_META[event.relay].label}</strong>
+        <p>{event.type === "reset" ? "Všechna relé byla bezpečně odpojena." : `Požadovaný stav: ${relays[event.relay] ? "zapnuto" : "vypnuto"}`}</p>
+        <time dateTime={event.date}>{formatDateTime(event.date)}</time>
+      </div>
+    </li>)}</ol> : <p className="solar-alert solar-alert--info mt-4">Databáze zatím neobsahuje historii událostí.</p>}
+    <p className="mt-4 text-xs text-[var(--solar-muted)]">Zobrazuje poslední změny relé a automatické bezpečnostní resety.</p>
   </SolarPanel>;
 }

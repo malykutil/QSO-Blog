@@ -13,6 +13,7 @@ import {
 
 const LOGIN_ERROR_MESSAGE = "Přihlášení se nezdařilo. Zkontroluj přihlašovací údaje a zkus to znovu.";
 const RATE_LIMIT_MESSAGE = "Příliš mnoho pokusů o přihlášení. Zkus to prosím za chvíli znovu.";
+const PUBLIC_APP_ORIGINS = new Set(["https://ok2mkj.cz", "https://www.ok2mkj.cz"]);
 
 function buildResponse(body: Record<string, unknown>, status: number, extraHeaders: HeadersInit = {}) {
   return NextResponse.json(body, {
@@ -75,7 +76,12 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = request.headers.get("origin");
-  if (origin && origin !== request.nextUrl.origin) {
+  const allowedOrigins = new Set([request.nextUrl.origin, ...PUBLIC_APP_ORIGINS]);
+
+  // Cloudflare Tunnel terminates HTTPS before forwarding the request to this
+  // local HTTP origin. Accept only the two public HTTPS origins in addition to
+  // the request origin so the CSRF check remains effective behind the proxy.
+  if (origin && !allowedOrigins.has(origin)) {
     return buildResponse({ error: "Neplatný požadavek." }, 403);
   }
 

@@ -17,6 +17,11 @@ export const SOLAR_MEASUREMENT_CONFIG = {
   temperatureMinC: -50,
   temperatureMaxC: 100,
   maxTemperatureJumpC: 20,
+  // The installed ACS712 sensors are the 20 A version.
+  maxCurrentA: 20,
+  // A single telemetry sample must not change by more than this amount.
+  // Larger changes are treated as a sensor/serial glitch and omitted.
+  maxCurrentJumpA: 5,
 } as const;
 
 const TEMPERATURE_FIELDS = [
@@ -47,6 +52,45 @@ export function sanitizeTemperatureFields(
     if (!isPlausibleTemperature(value, typeof previousValue === "number" ? previousValue : null)) {
       delete sanitized[key];
     }
+  }
+  return sanitized;
+}
+
+const CURRENT_FIELDS = ["solar1_current", "solar2_current", "battery_current"] as const;
+
+export function isPlausibleCurrent(value: number, previousValue?: number | null, elapsedMs?: number | null) {
+  if (!Number.isFinite(value) || Math.abs(value) > SOLAR_MEASUREMENT_CONFIG.maxCurrentA) return false;
+  if (previousValue === undefined || previousValue === null || elapsedMs === null || elapsedMs === undefined) return true;
+  if (elapsedMs > SOLAR_MEASUREMENT_CONFIG.maxIntegrationGapMs) return true;
+  return Math.abs(value - previousValue) <= SOLAR_MEASUREMENT_CONFIG.maxCurrentJumpA;
+}
+
+function normalizeCurrentValue(value: number, previousValue?: number | null, elapsedMs?: number | null) {
+  // Older firmware sent milliamps in the current fields (for example 2222
+  // instead of 2.222). Keep the correction at the ingestion boundary so old
+  // history and new samples use the same unit: amperes.
+  const normalized = Math.abs(value) > 50 && Math.abs(value) <= 5000 ? value / 1000 : value;
+  return isPlausibleCurrent(normalized, previousValue, elapsedMs) ? normalized : null;
+}
+
+export function sanitizeCurrentFields(
+  sample: Record<string, unknown>,
+  previousSample?: Record<string, unknown> | null,
+) {
+  const sanitized = { ...sample };
+  for (const key of CURRENT_FIELDS) {
+    const value = sanitized[key];
+    if (typeof value !== "number") continue;
+    const previousValue = previousSample?.[key];
+    const previous = typeof previousValue === "number" && Number.isFinite(previousValue) ? previousValue : null;
+    const currentTimestamp = typeof sanitized.recorded_at === "string" ? new Date(sanitized.recorded_at).getTime() : NaN;
+    const previousTimestamp = typeof previousSample?.recorded_at === "string" ? new Date(previousSample.recorded_at).getTime() : NaN;
+    const elapsedMs = Number.isFinite(currentTimestamp) && Number.isFinite(previousTimestamp)
+      ? currentTimestamp - previousTimestamp
+      : null;
+    const normalized = normalizeCurrentValue(value, previous, elapsedMs);
+    if (normalized === null) delete sanitized[key];
+    else sanitized[key] = normalized;
   }
   return sanitized;
 }
@@ -109,21 +153,22 @@ export function getTelemetryFreshness(recordedAt: string | null | undefined, now
 }
 
 export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
-  const solarTotalCurrent = calculateSolarTotalCurrent(sample.battery_current);
-  const loadVoltage = finite(sample.solar2_voltage);
-  const loadCurrent = finite(sample.solar2_current);
-  const batteryFlowCurrent = calculateBatteryFlowCurrent(sample);
-  const batteryPower = calculatePower(sample.battery_voltage, batteryFlowCurrent);
-  const measuredLoadPower = finite(sample.load_power);
+  const sanitized = sanitizeCurrentFields(sample as unknown as Record<string, unknown>) as unknown as SolarTelemetry;
+  const solarTotalCurrent = calculateSolarTotalCurrent(sanitized.battery_current);
+  const loadVoltage = finite(sanitized.solar2_voltage);
+  const loadCurrent = finite(sanitized.solar2_current);
+  const batteryFlowCurrent = calculateBatteryFlowCurrent(sanitized);
+  const batteryPower = calculatePower(sanitized.battery_voltage, batteryFlowCurrent);
+  const measuredLoadPower = finite(sanitized.load_power);
   const loadPower = measuredLoadPower ?? calculatePower(loadVoltage, loadCurrent);
   // Legacy INA219 columns carry the dedicated Waveshare UPS HAT values from RPi.
   const upsVoltage = finite(sample.ina219_shunt_voltage_mv);
   const upsCurrent = finite(sample.ina219_current);
   return {
-    ...sample,
+    ...sanitized,
     // solar1_voltage je DB kompatibilni transport vlhkosti DHT11 na D12;
     // napeti solarniho panelu tato instalace nemeri.
-    mppt_humidity: finite(sample.solar1_voltage),
+    mppt_humidity: finite(sanitized.solar1_voltage),
     solar_total_current: solarTotalCurrent,
     battery_flow_current_a: batteryFlowCurrent,
     load_voltage_v: loadVoltage,
@@ -132,7 +177,7 @@ export function enrichSolarTelemetry(sample: SolarTelemetry): SolarEnergyPoint {
     load_power_w: loadPower,
     // User-facing wiring after the requested value swap: A2 is displayed as
     // battery current, while inverted A1 is displayed as load current.
-    battery_state: getBatteryFlowState(sample.battery_voltage, loadCurrent),
+    battery_state: getBatteryFlowState(sanitized.battery_voltage, loadCurrent),
     ups_voltage_v: upsVoltage,
     ups_current_a: upsCurrent,
     ups_charge_percent: calculateUpsChargePercent(upsVoltage),
@@ -163,15 +208,33 @@ export function analyzeSolarEnergy(samples: SolarTelemetry[]): SolarEnergyAnalys
     (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
   );
   const previousValidTemperatures: Partial<Record<TemperatureField, number>> = {};
+  const previousValidCurrents: Partial<Record<(typeof CURRENT_FIELDS)[number], number>> = {};
+  let previousValidCurrentRecordedAt: string | null = null;
   const history = ordered.map((sample) => {
-    const sanitized = sanitizeTemperatureFields(sample as unknown as Record<string, unknown>, previousValidTemperatures);
+    const temperatureSanitized = sanitizeTemperatureFields(sample as unknown as Record<string, unknown>, previousValidTemperatures);
+    const previousCurrentSample = Object.fromEntries(
+      CURRENT_FIELDS
+        .filter((key) => typeof previousValidCurrents[key] === "number")
+        .map((key) => [key, previousValidCurrents[key]]),
+    );
+    const sanitized = sanitizeCurrentFields(temperatureSanitized, {
+      ...previousCurrentSample,
+      recorded_at: previousValidCurrentRecordedAt,
+    }) as unknown as SolarTelemetry;
+    for (const key of CURRENT_FIELDS) {
+      const value = sanitized[key];
+      if (typeof value === "number" && isPlausibleCurrent(value)) previousValidCurrents[key] = value;
+    }
     for (const key of TEMPERATURE_FIELDS) {
       const value = sanitized[key];
       if (typeof value === "number" && isPlausibleTemperature(value, previousValidTemperatures[key])) {
         previousValidTemperatures[key] = value;
       }
     }
-    return enrichSolarTelemetry(sanitized as unknown as SolarTelemetry);
+    if (CURRENT_FIELDS.some((key) => typeof sanitized[key] === "number")) {
+      previousValidCurrentRecordedAt = sample.recorded_at;
+    }
+    return enrichSolarTelemetry(sanitized);
   });
   let activeChargingMs = 0;
   let skippedGaps = 0;

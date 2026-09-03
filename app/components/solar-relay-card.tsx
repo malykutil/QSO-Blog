@@ -23,6 +23,7 @@ function formatNumber(value: number | null | undefined, unit: string) {
 export function RelayCard({
   relay,
   requestedState,
+  mode,
   updatedAt,
   disabled,
   busy,
@@ -31,6 +32,7 @@ export function RelayCard({
 }: {
   relay: SolarRelayName;
   requestedState: boolean;
+  mode?: "MANUAL_OFF" | "AUTO" | "MANUAL_ON";
   updatedAt?: string;
   disabled: boolean;
   busy: boolean;
@@ -45,12 +47,12 @@ export function RelayCard({
       <div className="min-w-0"><h3 className="font-semibold text-[var(--solar-text)]">{meta.label}</h3><p className="mt-1 text-xs leading-5 text-[var(--solar-muted)]">{meta.description}</p></div>
     </div>
     <dl className="solar-device-state mt-4">
-      <div><dt>Požadovaný stav</dt><dd className={requestedState ? "is-on" : ""}>{busy ? "ODESÍLÁNÍ…" : requestedState ? "ZAPNUTO" : "VYPNUTO"}</dd></div>
+      <div><dt>Stav potvrzený controllerem</dt><dd className={requestedState ? "is-on" : ""}>{busy ? "ODESÍLÁNÍ…" : requestedState ? "ZAPNUTO" : "VYPNUTO"}</dd></div>
       <div><dt>Fyzický stav</dt><dd>N/A</dd></div>
-      <div><dt>Režim</dt><dd>{requestedState ? "RUČNĚ ZAPNUTO" : "RUČNĚ VYPNUTO"}</dd></div>
+      <div><dt>Režim</dt><dd>{mode === "AUTO" ? "AUTO" : requestedState ? "RUČNĚ ZAPNUTO" : "RUČNĚ VYPNUTO"}</dd></div>
       <div><dt>Poslední změna</dt><dd>{formatDateTime(updatedAt)}</dd></div>
     </dl>
-    <p className="mt-3 text-xs leading-5 text-[var(--solar-muted)]">AUTO zatím databáze nepodporuje. Fyzické potvrzení relé se z Raspberry Pi nevrací, proto jej UI nepředstírá.</p>
+    <p className="mt-3 text-xs leading-5 text-[var(--solar-muted)]">Příkaz nejprve čeká na podepsané převzetí RPi. Fyzický pomocný kontakt není zapojen, proto zůstává fyzický stav N/A.</p>
     {error ? <p className="solar-device-error mt-3">{error}</p> : null}
     <button type="button" disabled={disabled || busy} onClick={() => onToggle(relay, desiredState)} className={`solar-device-action mt-4 ${desiredState ? "is-on" : "is-off"}`}>
       {busy ? "Čekám na server…" : desiredState ? "Požádat o zapnutí" : "Požádat o vypnutí"}

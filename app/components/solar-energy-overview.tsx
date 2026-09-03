@@ -192,6 +192,7 @@ export function SensorGrid({ telemetry }: { telemetry: SolarEnergyPoint | null }
     ["Teplota uvnitř", numberValue(telemetry?.object_temperature), "°C", "temperature"],
     ["Vlhkost uvnitř", numberValue(telemetry?.object_humidity), "%", "humidity"],
     ["Venkovní teplota", numberValue(telemetry?.outside_temperature), "°C", "temperature"],
+    ["Venkovní vlhkost", numberValue(telemetry?.outside_humidity), "%", "humidity"],
     ["Venkovní tlak", numberValue(telemetry?.outside_pressure), "hPa", "pressure"],
     ["Teplota baterie", numberValue(telemetry?.battery_temperature), "°C", "temperature"],
     ["Teplota MPPT", numberValue(telemetry?.mppt_temperature), "°C", "temperature"],

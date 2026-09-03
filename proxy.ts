@@ -4,6 +4,7 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 
 import { isSupabaseConfigured } from "@/src/lib/supabase";
 import { SOLAR_CONTROL_COOKIE, verifySolarControlSession } from "@/src/lib/solar-auth";
+import { resilientFetch } from "@/src/lib/resilient-fetch";
 
 const privatePaths = ["/dashboard", "/settings", "/bezpecnost"];
 const accessLogExcludedEmails = new Set(["malykutil06@gmail.com"]);
@@ -96,7 +97,7 @@ async function logAccess(payload: {
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: resilientFetch } });
 
     await supabase.from("security_access_logs").insert({
       visited_at: new Date().toISOString(),
@@ -133,6 +134,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   try {
     supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      global: { fetch: resilientFetch },
       cookies: {
         getAll() {
           return request.cookies.getAll();

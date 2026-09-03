@@ -1,5 +1,5 @@
 export const solarTelemetryFields =
-  "solar1_voltage,solar2_voltage,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,battery_voltage,solar1_current,solar2_current,battery_current,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,outside_temperature,outside_pressure,mq9_raw,mq9_voltage,mppt_temperature,recorded_at";
+  "solar1_voltage,solar2_voltage,solar1_power,solar2_power,load_power,solar_energy_today_wh,load_energy_today_wh,battery_voltage,solar1_current,solar2_current,battery_current,rpi_cpu_temperature,object_temperature,object_humidity,battery_temperature,outside_temperature,outside_humidity,outside_pressure,mq9_raw,mq9_voltage,mppt_temperature,remote_control_enabled,controller_fault,emergency_stop_active,battery_pair_consistent,command_auth_ready,recorded_at";
 
 export const solarExtendedTelemetryFields =
   "arduino_uptime_ms,battery_pressure,ina219_current,ina219_power,ina219_shunt_voltage_mv,acs1_raw,acs1_voltage,acs2_raw,acs2_voltage,acs3_raw,acs3_voltage,mq9_alarm,mq9_alarm_trigger_raw";
@@ -24,6 +24,7 @@ export type SolarTelemetry = {
   object_humidity: number | null;
   battery_temperature: number | null;
   outside_temperature: number | null;
+  outside_humidity: number | null;
   outside_pressure: number | null;
   mq9_raw: number | null;
   mq9_voltage: number | null;
@@ -41,6 +42,11 @@ export type SolarTelemetry = {
   acs3_voltage: number | null;
   mq9_alarm: boolean | null;
   mq9_alarm_trigger_raw: number | null;
+  remote_control_enabled: boolean | null;
+  controller_fault: boolean | null;
+  emergency_stop_active: boolean | null;
+  battery_pair_consistent: boolean | null;
+  command_auth_ready: boolean | null;
   recorded_at: string;
 };
 

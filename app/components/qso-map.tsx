@@ -257,37 +257,57 @@ export function QsoMap({
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-    if (!supabase || !isSupabaseConfigured()) {
+    if (!isPublicMap && (!supabase || !isSupabaseConfigured())) {
       return;
     }
 
     let isMounted = true;
 
     const loadRecords = async (showSyncStatus = false) => {
-      const { data, error } = await supabase.from("qso_logs").select(qsoSelectFields).order("date", { ascending: false });
-
       if (!isMounted) {
         return;
       }
 
-      if (error) {
+      if (isPublicMap) {
+        const response = await fetch("/api/qso/public", { cache: "no-store" });
+
+        if (!response.ok) {
+          setStatus({ type: "error", message: "Nepodařilo se načíst mapu." });
+          return;
+        }
+
+        const body = (await response.json()) as { records?: Record<string, unknown>[] };
+        const data = body.records ?? [];
+
+        if (!data.length) {
+          setStatus({ type: "info", message: "Na mapě zatím nejsou žádná veřejná spojení." });
+          setRecords([]);
+          return;
+        }
+
+        setRecords(data.map((row) => normalizeQsoRecord(row)));
+      } else {
+        const { data, error } = await supabase!.from("qso_logs").select(qsoSelectFields).order("date", { ascending: false });
+
+        if (error) {
         setStatus({
           type: "error",
-          message: isPublicMap ? "Nepodařilo se načíst mapu." : "Nepodařilo se načíst soukromou mapu.",
+          message: "Nepodařilo se načíst soukromou mapu.",
         });
         return;
-      }
+        }
 
-      if (!data?.length) {
+        if (!data?.length) {
         setStatus({
           type: "info",
-          message: isPublicMap ? "Na mapě zatím nejsou žádná spojení." : "Soukromá mapa zatím nemá žádné záznamy.",
+          message: "Soukromá mapa zatím nemá žádné záznamy.",
         });
         setRecords([]);
         return;
-      }
+        }
 
-      setRecords(data.map((row) => normalizeQsoRecord(row)));
+        setRecords(data.map((row) => normalizeQsoRecord(row)));
+      }
 
       if (showSyncStatus) {
         setStatus(null);

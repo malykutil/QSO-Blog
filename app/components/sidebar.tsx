@@ -21,6 +21,7 @@ const publicNavigation: NavigationItem[] = [
   { href: "/qsl-galerie", label: "QSL galerie", hint: "Přehled QSL karet z databáze" },
   { href: "/podminky", label: "Podmínky", hint: "HamSolar a PSK Reporter" },
   { href: "/o-mne", label: "O mně", hint: "Něco málo o stanici a webu" },
+  { href: "/sdr", label: "WebSDR", hint: "Živý přijímač RTL-SDR V4", accent: "sky" },
   { href: "/solar", label: "OK2KZB", hint: "Solární přehled a ovládání relé", accent: "amber" },
 ];
 
@@ -235,7 +236,9 @@ export function Sidebar() {
         <div className="space-y-4">
           <ThemeToggle />
 
-          {isLoggedIn ? (
+          {isCheckingAuth ? (
+            <div className="h-[52px] animate-pulse rounded-[1.5rem] bg-slate-900/10" aria-label="Ověřuji přihlášení" />
+          ) : isLoggedIn ? (
             <button
               onClick={handleLogout}
               className="block w-full rounded-[1.5rem] bg-slate-950 px-4 py-4 text-center text-sm font-semibold text-white transition hover:bg-slate-800"
