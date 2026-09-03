@@ -47,7 +47,7 @@ def test_czech_dashboard_and_api_are_available(tmp_path):
         if agent["risk_profile"] == "HIGH_VOLATILITY"
     ]
     assert {agent["market"] for agent in aggressive} == {"US", "EU"}
-    assert all(agent["risk_per_trade_percent"] == 1 for agent in aggressive)
+    assert all(agent["risk_per_trade_percent"] == 0.5 for agent in aggressive)
     assert all(agent["max_portfolio_risk_percent"] == 5 for agent in aggressive)
     assert all(agent["learning"]["policy_version"] == 1 for agent in payload.json()["agents"])
     assert all(agent["learning"]["trades_learned"] == 0 for agent in payload.json()["agents"])

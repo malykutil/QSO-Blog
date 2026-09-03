@@ -4,6 +4,7 @@ import pytest
 
 from stock_assistant.agent_league import (
     AgentLeague,
+    entry_quality_accepts,
     high_volatility_accepts,
     high_volatility_score,
     score_snapshot,
@@ -112,7 +113,7 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
         assert len(state["positions"]) == 1
         position = state["positions"][0]
         if account["slug"] == "momentum":
-            assert position["quantity"] == 25
+            assert position["quantity"] == 12
             assert position["stop_loss"] == pytest.approx(96)
             assert position["target_1"] == pytest.approx(110)
             assert position["target_2"] == pytest.approx(120)
@@ -149,7 +150,7 @@ def test_agent_league_opens_risk_limited_positions_and_closes_at_stop(
         if agent["market"] != "US":
             continue
         assert agent["open_positions"] == []
-        expected_loss = -100 if agent["slug"] == "momentum" else -64
+        expected_loss = -48 if agent["slug"] == "momentum" else -64
         assert agent["realized_pnl"] == pytest.approx(expected_loss)
         assert agent["equity"] == pytest.approx(10_000 + expected_loss)
         assert agent["learning"]["trades_learned"] == 1
@@ -184,12 +185,12 @@ def test_agent_league_learns_from_a_target_win(tmp_path, snapshot):
             continue
         learning = agent["learning"]
         assert agent["open_positions"] == []
-        expected_profit = 525 if agent["slug"] == "momentum" else 336
+        expected_profit = 252 if agent["slug"] == "momentum" else 336
         assert agent["realized_pnl"] == pytest.approx(expected_profit)
         assert learning["trades_learned"] == 1
         assert learning["wins"] == 1
         assert learning["losses"] == 0
-        expected_reward = 525 / 100 if agent["slug"] == "momentum" else 336 / 48
+        expected_reward = 252 / 48 if agent["slug"] == "momentum" else 336 / 48
         assert learning["last_reward_r"] == pytest.approx(expected_reward)
         assert learning["decision_threshold"] < learning["base_threshold"]
         assert "Zisk" in learning["recent_lessons"][0]["lesson"]
@@ -202,6 +203,28 @@ def test_high_volatility_profile_requires_real_atr_and_ranks_it_higher(snapshot)
     assert high_volatility_accepts(volatile, volatility_floor=2.5)
     assert not high_volatility_accepts(calm, volatility_floor=1.5)
     assert high_volatility_score(volatile) > high_volatility_score(calm)
+
+
+def test_entry_quality_rejects_chasing_and_weak_candle(snapshot):
+    assert entry_quality_accepts(snapshot, high_volatility=False)
+    chasing = snapshot.model_copy(update={"distance_ema20": 7.0})
+    weak = snapshot.model_copy(update={"open": 101.0, "close": 100.0})
+
+    assert not entry_quality_accepts(chasing, high_volatility=False)
+    assert not entry_quality_accepts(weak, high_volatility=False)
+
+
+def test_target_one_raises_stop_above_break_even(tmp_path, snapshot):
+    repository, _, league = make_league(tmp_path)
+    league.process({snapshot.ticker: snapshot})
+    target_one = snapshot.model_copy(
+        update={"current_price": 111.0, "close": 111.0, "open": 110.0}
+    )
+    league.process({target_one.ticker: target_one})
+
+    for account in repository.get_agent_accounts("US"):
+        position = repository.get_agent_positions(int(account["id"]))[0]
+        assert position["stop_loss"] > position["entry_price"]
 
 
 def test_capital_change_requires_explicit_history_reset(tmp_path, snapshot):

@@ -65,6 +65,23 @@ def strategy_accepts(strategy: str, snapshot: IndicatorSnapshot, score: float) -
     return False
 
 
+def entry_quality_accepts(snapshot: IndicatorSnapshot, *, high_volatility: bool) -> bool:
+    """Reject chasing, weak candles and abnormal gaps before strategy scoring."""
+    atr_percent = snapshot.atr / snapshot.current_price * 100
+    max_gap = 3.0 if high_volatility else 2.0
+    max_extension = 8.0 if high_volatility else 5.0
+    max_breakout_extension = 1.5 if high_volatility else 1.0
+    return (
+        snapshot.close >= snapshot.open
+        and abs(snapshot.gap_percent) <= max_gap
+        and -1.0 <= snapshot.distance_ema20 <= max_extension
+        and snapshot.current_price <= snapshot.recent_high_20
+        + max_breakout_extension * snapshot.atr
+        and 0.5 <= atr_percent <= (8.0 if high_volatility else 5.0)
+        and snapshot.relative_volume >= (1.2 if high_volatility else 1.1)
+    )
+
+
 def high_volatility_score(snapshot: IndicatorSnapshot) -> float:
     """Favor upside momentum in the most volatile valid symbols."""
     atr_percent = snapshot.atr / snapshot.current_price * 100
@@ -160,8 +177,34 @@ class AgentLeague:
                     "Dosažen druhý cenový cíl.",
                 )
                 closed_tickers.add(ticker)
+            elif snapshot.current_price >= float(position["target_1"]):
+                entry = float(position["entry_price"])
+                initial_risk_per_share = entry - float(position["stop_loss"])
+                protected_stop = entry + max(initial_risk_per_share * 0.10, 0)
+                if self.repository.agent_raise_stop(
+                    agent_id, ticker, protected_stop
+                ):
+                    logger.info(
+                        "Agent PAPER stop raised agent_id=%d ticker=%s stop=%.2f",
+                        agent_id,
+                        ticker,
+                        protected_stop,
+                    )
 
         state = self.repository.agent_runtime_state(agent_id)
+        initial_cash = float(state["initial_cash"])
+        drawdown = (
+            max(0.0, 1 - float(state["equity"]) / initial_cash)
+            if initial_cash > 0
+            else 1.0
+        )
+        if drawdown >= self.settings.agent_drawdown_pause:
+            logger.warning(
+                "Agent entries paused agent_id=%d drawdown=%.2f%%",
+                agent_id,
+                drawdown * 100,
+            )
+            return
         positions = {str(position["ticker"]) for position in state["positions"]}
         max_positions = (
             self.settings.agent_high_volatility_max_positions
@@ -201,6 +244,8 @@ class AgentLeague:
         for decision_score, base_score, features, snapshot in ranked:
             if decision_score < threshold:
                 break
+            if not entry_quality_accepts(snapshot, high_volatility=high_volatility):
+                continue
             accepted = (
                 high_volatility_accepts(snapshot, volatility_floor)
                 if high_volatility
@@ -305,6 +350,9 @@ class AgentLeague:
             if high_volatility
             else self.settings.agent_risk_per_trade
         )
+        drawdown = max(0.0, 1 - equity / float(state["initial_cash"]))
+        if drawdown >= self.settings.agent_drawdown_risk_reduction:
+            risk_per_trade *= 0.5
         max_symbol_exposure = (
             self.settings.agent_high_volatility_max_symbol_exposure
             if high_volatility

@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -1038,6 +1039,21 @@ class Repository:
                 ),
             )
             connection.commit()
+
+    def agent_raise_stop(self, agent_id: int, ticker: str, stop_loss: float) -> bool:
+        """Raise a PAPER stop atomically; a stop can never move farther from entry."""
+        if not math.isfinite(stop_loss) or stop_loss <= 0:
+            return False
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """UPDATE agent_positions
+                   SET stop_loss = ?
+                   WHERE agent_id = ? AND ticker = ?
+                     AND stop_loss < ? AND ? < target_2""",
+                (stop_loss, agent_id, ticker, stop_loss, stop_loss),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
 
     def agent_close_position(
         self,
