@@ -58,6 +58,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // Keep production builds within the small Proxmox container's CPU/I/O budget.
+    cpus: 1,
+  },
   async headers() {
     return [
       {
