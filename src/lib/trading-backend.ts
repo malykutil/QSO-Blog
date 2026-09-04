@@ -21,7 +21,13 @@ function getBackendConfig() {
   }
 
   const localDevelopment = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-  if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && localDevelopment)) {
+  const privateIpv4 = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(url.hostname);
+  const explicitlyAllowedPrivateHttp = process.env.TRADING_ASSISTANT_ALLOW_PRIVATE_HTTP === "1" && privateIpv4;
+  if (
+    url.protocol !== "https:" &&
+    !(process.env.NODE_ENV !== "production" && localDevelopment) &&
+    !explicitlyAllowedPrivateHttp
+  ) {
     return null;
   }
 
