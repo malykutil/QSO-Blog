@@ -1,8 +1,7 @@
 name: QSL mail worker
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
+  # Production queue processing now runs on CT107 via qso-qsl-worker.timer.
   workflow_dispatch:
 
 concurrency:
